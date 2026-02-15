@@ -1,0 +1,10 @@
+build/
+.build/
+.DS_Store
+.swiftpm/
+Package.resolved
+xcuserdata/
+DerivedData/
+*.o
+*.swiftmodule
+*.swiftdoc
