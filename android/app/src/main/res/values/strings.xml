@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Buzzel</string>
+    <string name="notification_channel_id">buzzel_service</string>
+    <string name="notification_channel_name">Buzzel Service</string>
+    <string name="notification_title">Buzzel is running</string>
+    <string name="notification_text">Listening for SMS</string>
+</resources>
