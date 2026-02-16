@@ -1,3 +1,7 @@
+.PHONY: init
+init:
+	sh init.sh
+
 .PHONY: build
 build:
 	sh build.sh
