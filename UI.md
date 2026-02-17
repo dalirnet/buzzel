@@ -226,7 +226,7 @@ Empty state: "No activity yet" centered in `secondary` color.
 - QR: displayed inline via AnimatedSwitcher, replacing the power button
 - Activity log: in-window view with back icon in header
 - Permissions required: Bluetooth only
-- Status bar icon using `app-symbol` as template image
+- Status bar icon using wave-b logo as template image
 
 | Status Bar State | Appearance                 |
 | ---------------- | -------------------------- |
@@ -240,26 +240,25 @@ Right-click menu: connection status, Open App, Quit.
 
 ## Icons
 
-All icons stored in `icons/`. UI icons are 24x24, stroke style, using `currentColor`. The SVG path parser must support arc commands (A/a).
+UI icons are 24x24, stroke style, using `currentColor`. SVG path data is embedded directly in source code. The SVG path parser must support arc commands (A/a).
 
-### App Icon
+### Logo
 
-| File                    | Size    | Purpose                  |
-| ----------------------- | ------- | ------------------------ |
-| `app-icon.svg`          | 512x512 | App icon with gradient   |
-| `app-icon-animated.svg` | 512x512 | Animated draw-on variant |
-| `app-symbol.svg`        | 24x24   | Monochrome symbol        |
+| File                | Size    | Purpose                  |
+| ------------------- | ------- | ------------------------ |
+| `logo.svg`          | 512x512 | App logo with gradient   |
+| `logo-animated.svg` | 512x512 | Animated draw-on variant |
 
 Waveform lowercase **b**, single open stroke. Deep Ocean gradient: `#0077B6 → #00B4D8 → #48CAE4 → #90E0EF`.
 
 ### UI Icons
 
-| File                 | Description        | Stroke Attributes                                    |
-| -------------------- | ------------------ | ---------------------------------------------------- |
-| `qr-code.svg`        | QR code            | Mixed stroke and fill                                |
-| `undo-left.svg`      | Back arrow         | Round cap, round join                                |
-| `shield-check.svg`   | Shield + checkmark | Shield: default. Inner: round cap, round join        |
-| `shield-cross.svg`   | Shield + cross     | Shield: default. Inner: round cap                    |
-| `shield-keyhole.svg` | Shield + keyhole   | Shield: default. Inner: round join (uses arcs)       |
-| `shield-up.svg`      | Shield + chevrons  | Shield: default. Inner: round cap, round join        |
-| `shield-warning.svg` | Shield + warning   | Shield: default. Line: round cap. Dot: filled circle |
+| Icon             | Description        | Stroke Attributes                                    |
+| ---------------- | ------------------ | ---------------------------------------------------- |
+| `qr-code`        | QR code            | Mixed stroke and fill                                |
+| `undo-left`      | Back arrow         | Round cap, round join                                |
+| `shield-check`   | Shield + checkmark | Shield: default. Inner: round cap, round join        |
+| `shield-cross`   | Shield + cross     | Shield: default. Inner: round cap                    |
+| `shield-keyhole` | Shield + keyhole   | Shield: default. Inner: round join (uses arcs)       |
+| `shield-up`      | Shield + chevrons  | Shield: default. Inner: round cap, round join        |
+| `shield-warning` | Shield + warning   | Shield: default. Line: round cap. Dot: filled circle |
