@@ -12,8 +12,9 @@ import android.view.animation.OvershootInterpolator
 import androidx.core.graphics.PathParser
 import kotlin.math.min
 
-class PowerButtonView(context: Context) : View(context) {
-
+class PowerButtonView(
+    context: Context,
+) : View(context) {
     var state: PowerButtonState = PowerButtonState.UNPAIRED
         set(value) {
             if (field == value) return
@@ -31,18 +32,21 @@ class PowerButtonView(context: Context) : View(context) {
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val ripplePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
-    private val shieldStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = AppColors.onButton
-    }
-    private val innerStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        color = AppColors.onButton
-    }
-    private val innerFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-        color = AppColors.onButton
-    }
+    private val shieldStrokePaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = AppColors.onButton
+        }
+    private val innerStrokePaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = AppColors.onButton
+        }
+    private val innerFillPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = AppColors.onButton
+        }
 
     // Animation state
     private var currentColor: Int = stateColor(state)
@@ -67,28 +71,33 @@ class PowerButtonView(context: Context) : View(context) {
         updatePulse()
     }
 
-    private fun stateColor(s: PowerButtonState): Int = when (s) {
-        PowerButtonState.NO_PERMISSION -> AppColors.mutedYellow
-        PowerButtonState.UNPAIRED -> AppColors.mutedGray
-        PowerButtonState.CONNECTING -> AppColors.mutedOrange
-        PowerButtonState.CONNECTED -> AppColors.mutedGreen
-        PowerButtonState.DISCONNECTED -> AppColors.mutedRed
-    }
+    private fun stateColor(s: PowerButtonState): Int =
+        when (s) {
+            PowerButtonState.NO_PERMISSION -> AppColors.mutedYellow
+            PowerButtonState.UNPAIRED -> AppColors.mutedGray
+            PowerButtonState.CONNECTING -> AppColors.mutedOrange
+            PowerButtonState.CONNECTED -> AppColors.mutedGreen
+            PowerButtonState.DISCONNECTED -> AppColors.mutedRed
+        }
 
     // --- Color Animation (300ms easeInOut) ---
 
-    private fun animateColorChange(from: Int, to: Int) {
+    private fun animateColorChange(
+        from: Int,
+        to: Int,
+    ) {
         colorAnimator?.cancel()
         val evaluator = ArgbEvaluator()
-        colorAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 300
-            interpolator = AccelerateDecelerateInterpolator()
-            addUpdateListener {
-                currentColor = evaluator.evaluate(it.animatedValue as Float, from, to) as Int
-                invalidate()
+        colorAnimator =
+            ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 300
+                interpolator = AccelerateDecelerateInterpolator()
+                addUpdateListener {
+                    currentColor = evaluator.evaluate(it.animatedValue as Float, from, to) as Int
+                    invalidate()
+                }
+                start()
             }
-            start()
-        }
     }
 
     // --- Pulse Animation (connecting) ---
@@ -96,14 +105,18 @@ class PowerButtonView(context: Context) : View(context) {
     private fun updatePulse() {
         val shouldPulse = state == PowerButtonState.CONNECTING
         if (shouldPulse && pulseAnimator == null) {
-            pulseAnimator = ValueAnimator.ofFloat(1f, 0.88f).apply {
-                duration = 900
-                repeatMode = ValueAnimator.REVERSE
-                repeatCount = ValueAnimator.INFINITE
-                interpolator = AccelerateDecelerateInterpolator()
-                addUpdateListener { pulseScale = it.animatedValue as Float; invalidate() }
-                start()
-            }
+            pulseAnimator =
+                ValueAnimator.ofFloat(1f, 0.88f).apply {
+                    duration = 900
+                    repeatMode = ValueAnimator.REVERSE
+                    repeatCount = ValueAnimator.INFINITE
+                    interpolator = AccelerateDecelerateInterpolator()
+                    addUpdateListener {
+                        pulseScale = it.animatedValue as Float
+                        invalidate()
+                    }
+                    start()
+                }
         } else if (!shouldPulse) {
             pulseAnimator?.cancel()
             pulseAnimator = null
@@ -119,32 +132,41 @@ class PowerButtonView(context: Context) : View(context) {
         rippleAnimator?.cancel()
 
         // Press down
-        pressAnimator = ValueAnimator.ofFloat(1f, 0.85f).apply {
-            duration = 100
-            addUpdateListener { pressScale = it.animatedValue as Float; invalidate() }
-            start()
-        }
-        // Ripple ring
-        rippleAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 400
-            addUpdateListener {
-                val f = it.animatedValue as Float
-                rippleScale = 1f + f * 0.3f
-                rippleAlpha = if (f < 0.3f) f / 0.3f * 0.3f else 0.3f * (1f - (f - 0.3f) / 0.7f)
-                invalidate()
+        pressAnimator =
+            ValueAnimator.ofFloat(1f, 0.85f).apply {
+                duration = 100
+                addUpdateListener {
+                    pressScale = it.animatedValue as Float
+                    invalidate()
+                }
+                start()
             }
-            start()
-        }
+        // Ripple ring
+        rippleAnimator =
+            ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 400
+                addUpdateListener {
+                    val f = it.animatedValue as Float
+                    rippleScale = 1f + f * 0.3f
+                    rippleAlpha = if (f < 0.3f) f / 0.3f * 0.3f else 0.3f * (1f - (f - 0.3f) / 0.7f)
+                    invalidate()
+                }
+                start()
+            }
 
         // Spring back after 200ms
         postDelayed({
             pressAnimator?.cancel()
-            pressAnimator = ValueAnimator.ofFloat(pressScale, 1f).apply {
-                duration = 300
-                interpolator = OvershootInterpolator(2f)
-                addUpdateListener { pressScale = it.animatedValue as Float; invalidate() }
-                start()
-            }
+            pressAnimator =
+                ValueAnimator.ofFloat(pressScale, 1f).apply {
+                    duration = 300
+                    interpolator = OvershootInterpolator(2f)
+                    addUpdateListener {
+                        pressScale = it.animatedValue as Float
+                        invalidate()
+                    }
+                    start()
+                }
         }, 200)
     }
 
@@ -186,17 +208,23 @@ class PowerButtonView(context: Context) : View(context) {
         drawShieldIcon(canvas, cx, cy, iconScale)
     }
 
-    private fun drawShieldIcon(canvas: Canvas, cx: Float, cy: Float, scale: Float) {
+    private fun drawShieldIcon(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        scale: Float,
+    ) {
         shieldStrokePaint.strokeWidth = scale * 1.5f
         // Shield outline: default cap/join (butt/miter)
         shieldStrokePaint.strokeCap = Paint.Cap.BUTT
         shieldStrokePaint.strokeJoin = Paint.Join.MITER
 
-        val matrix = Matrix().apply {
-            postTranslate(-12f, -12f)
-            postScale(scale, scale)
-            postTranslate(cx, cy)
-        }
+        val matrix =
+            Matrix().apply {
+                postTranslate(-12f, -12f)
+                postScale(scale, scale)
+                postTranslate(cx, cy)
+            }
 
         // Draw shield outline
         val shieldPath = PathParser.createPathFromPathData(SHIELD_PATH)
@@ -213,14 +241,24 @@ class PowerButtonView(context: Context) : View(context) {
         }
     }
 
-    private fun makeMatrix(cx: Float, cy: Float, scale: Float): Matrix = Matrix().apply {
-        postTranslate(-12f, -12f)
-        postScale(scale, scale)
-        postTranslate(cx, cy)
-    }
+    private fun makeMatrix(
+        cx: Float,
+        cy: Float,
+        scale: Float,
+    ): Matrix =
+        Matrix().apply {
+            postTranslate(-12f, -12f)
+            postScale(scale, scale)
+            postTranslate(cx, cy)
+        }
 
     // shield-check: round cap + round join
-    private fun drawCheck(canvas: Canvas, cx: Float, cy: Float, scale: Float) {
+    private fun drawCheck(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        scale: Float,
+    ) {
         innerStrokePaint.strokeWidth = scale * 1.5f
         innerStrokePaint.strokeCap = Paint.Cap.ROUND
         innerStrokePaint.strokeJoin = Paint.Join.ROUND
@@ -230,7 +268,12 @@ class PowerButtonView(context: Context) : View(context) {
     }
 
     // shield-cross: round cap
-    private fun drawCross(canvas: Canvas, cx: Float, cy: Float, scale: Float) {
+    private fun drawCross(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        scale: Float,
+    ) {
         innerStrokePaint.strokeWidth = scale * 1.5f
         innerStrokePaint.strokeCap = Paint.Cap.ROUND
         innerStrokePaint.strokeJoin = Paint.Join.MITER
@@ -240,31 +283,48 @@ class PowerButtonView(context: Context) : View(context) {
     }
 
     // shield-keyhole: round join (uses arcs)
-    private fun drawKeyhole(canvas: Canvas, cx: Float, cy: Float, scale: Float) {
+    private fun drawKeyhole(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        scale: Float,
+    ) {
         innerStrokePaint.strokeWidth = scale * 1.5f
         innerStrokePaint.strokeCap = Paint.Cap.BUTT
         innerStrokePaint.strokeJoin = Paint.Join.ROUND
-        val p = PathParser.createPathFromPathData(
-            "M11.5 16h1a1 1 0 0 0 1-1v-1.401A2.999 2.999 0 0 0 12 8a3 3 0 0 0-1.5 5.599V15a1 1 0 0 0 1 1Z"
-        )
+        val p =
+            PathParser.createPathFromPathData(
+                "M11.5 16h1a1 1 0 0 0 1-1v-1.401A2.999 2.999 0 0 0 12 8a3 3 0 0 0-1.5 5.599V15a1 1 0 0 0 1 1Z",
+            )
         p.transform(makeMatrix(cx, cy, scale))
         canvas.drawPath(p, innerStrokePaint)
     }
 
     // shield-up: round cap + round join
-    private fun drawUp(canvas: Canvas, cx: Float, cy: Float, scale: Float) {
+    private fun drawUp(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        scale: Float,
+    ) {
         innerStrokePaint.strokeWidth = scale * 1.5f
         innerStrokePaint.strokeCap = Paint.Cap.ROUND
         innerStrokePaint.strokeJoin = Paint.Join.ROUND
-        val p = PathParser.createPathFromPathData(
-            "M16 11.55L12.6 9a1 1 0 0 0-1.2 0L8 11.55m6 2.5l-2-1.5l-2 1.5"
-        )
+        val p =
+            PathParser.createPathFromPathData(
+                "M16 11.55L12.6 9a1 1 0 0 0-1.2 0L8 11.55m6 2.5l-2-1.5l-2 1.5",
+            )
         p.transform(makeMatrix(cx, cy, scale))
         canvas.drawPath(p, innerStrokePaint)
     }
 
     // shield-warning: line with round cap + filled dot
-    private fun drawWarning(canvas: Canvas, cx: Float, cy: Float, scale: Float) {
+    private fun drawWarning(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        scale: Float,
+    ) {
         innerStrokePaint.strokeWidth = scale * 1.5f
         innerStrokePaint.strokeCap = Paint.Cap.ROUND
         innerStrokePaint.strokeJoin = Paint.Join.MITER
@@ -295,14 +355,18 @@ class PowerButtonView(context: Context) : View(context) {
 
     private fun startHaloPulse() {
         if (haloAnimator != null) return
-        haloAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 2000
-            repeatMode = ValueAnimator.REVERSE
-            repeatCount = ValueAnimator.INFINITE
-            interpolator = AccelerateDecelerateInterpolator()
-            addUpdateListener { haloFraction = it.animatedValue as Float; invalidate() }
-            start()
-        }
+        haloAnimator =
+            ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 2000
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = AccelerateDecelerateInterpolator()
+                addUpdateListener {
+                    haloFraction = it.animatedValue as Float
+                    invalidate()
+                }
+                start()
+            }
     }
 
     companion object {

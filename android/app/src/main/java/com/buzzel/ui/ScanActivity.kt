@@ -36,7 +36,6 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 
 class ScanActivity : Activity() {
-
     companion object {
         private const val TAG = "ScanActivity"
         private const val CAMERA_REQUEST = 2001
@@ -52,7 +51,10 @@ class ScanActivity : Activity() {
     private var bgHandler: Handler? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var scannerInitialized = false
-    private val scanner by lazy { scannerInitialized = true; BarcodeScanning.getClient() }
+    private val scanner by lazy {
+        scannerInitialized = true
+        BarcodeScanning.getClient()
+    }
 
     @Volatile
     private var scanning = true
@@ -74,28 +76,36 @@ class ScanActivity : Activity() {
 
             textureView = TextureView(this)
             root.addView(
-                textureView, FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
-                )
+                textureView,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                ),
             )
 
-            val overlay = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(dp(24), dp(16), dp(24), dp(32))
-            }
+            val overlay =
+                LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    setPadding(dp(24), dp(16), dp(24), dp(32))
+                }
 
-            statusText = TextView(this).apply {
-                text = "Point camera at QR code"
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                setTextColor(Color.WHITE)
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-                gravity = Gravity.CENTER
-            }
+            statusText =
+                TextView(this).apply {
+                    text = "Point camera at QR code"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                    setTextColor(Color.WHITE)
+                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    gravity = Gravity.CENTER
+                }
             overlay.addView(
-                statusText, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { bottomMargin = dp(16) })
+                statusText,
+                LinearLayout
+                    .LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                    ).apply { bottomMargin = dp(16) },
+            )
 
             overlay.addView(
                 android.widget.Button(this).apply {
@@ -106,28 +116,37 @@ class ScanActivity : Activity() {
                     isAllCaps = false
                     stateListAnimator = null
                     elevation = 0f
-                    background = GradientDrawable().apply {
-                        setColor(Color.parseColor("#44FFFFFF"))
-                        cornerRadius = dp(10).toFloat()
-                    }
+                    background =
+                        GradientDrawable().apply {
+                            setColor(Color.parseColor("#44FFFFFF"))
+                            cornerRadius = dp(10).toFloat()
+                        }
                     setPadding(dp(24), dp(10), dp(24), dp(10))
-                    setOnClickListener { setResult(RESULT_CANCELED); finish() }
-                }, LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT
-                )
+                    setOnClickListener {
+                        setResult(RESULT_CANCELED)
+                        finish()
+                    }
+                },
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
             )
 
             root.addView(
-                overlay, FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
-                )
+                overlay,
+                FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM,
+                ),
             )
 
             setContentView(root)
 
             if (ContextCompat.checkSelfPermission(
                     this,
-                    Manifest.permission.CAMERA
+                    Manifest.permission.CAMERA,
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), CAMERA_REQUEST)
@@ -142,14 +161,20 @@ class ScanActivity : Activity() {
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == CAMERA_REQUEST) {
             val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
             Log.d(TAG, "Camera permission: $granted")
-            if (granted) startCamera()
-            else {
-                setResult(RESULT_CANCELED); finish()
+            if (granted) {
+                startCamera()
+            } else {
+                setResult(RESULT_CANCELED)
+                finish()
             }
         }
     }
@@ -172,48 +197,68 @@ class ScanActivity : Activity() {
         bgThread = HandlerThread("CameraBackground").also { it.start() }
         bgHandler = Handler(bgThread!!.looper)
 
-        textureView.surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-            override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-                openCamera()
-            }
+        textureView.surfaceTextureListener =
+            object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(
+                    surface: SurfaceTexture,
+                    width: Int,
+                    height: Int,
+                ) {
+                    openCamera()
+                }
 
-            override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {}
-            override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
-        }
+                override fun onSurfaceTextureSizeChanged(
+                    surface: SurfaceTexture,
+                    width: Int,
+                    height: Int,
+                ) {}
+
+                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
+
+                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+            }
         if (textureView.isAvailable) openCamera()
     }
 
     private fun openCamera() {
         val manager = getSystemService(CAMERA_SERVICE) as CameraManager
         try {
-            val cameraId = manager.cameraIdList.firstOrNull { id ->
-                manager.getCameraCharacteristics(id)
-                    .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
-            } ?: manager.cameraIdList.firstOrNull() ?: return
+            val cameraId =
+                manager.cameraIdList.firstOrNull { id ->
+                    manager
+                        .getCameraCharacteristics(id)
+                        .get(CameraCharacteristics.LENS_FACING) == CameraCharacteristics.LENS_FACING_BACK
+                } ?: manager.cameraIdList.firstOrNull() ?: return
 
-            val map = manager.getCameraCharacteristics(cameraId)
-                .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
-            val previewSize = map.getOutputSizes(SurfaceTexture::class.java)
-                ?.filter { it.width <= 1920 && it.height <= 1080 }
-                ?.maxByOrNull { it.width * it.height }
-                ?: Size(1280, 720)
+            val map =
+                manager
+                    .getCameraCharacteristics(cameraId)
+                    .get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
+            val previewSize =
+                map
+                    .getOutputSizes(SurfaceTexture::class.java)
+                    ?.filter { it.width <= 1920 && it.height <= 1080 }
+                    ?.maxByOrNull { it.width * it.height }
+                    ?: Size(1280, 720)
 
             Log.d(TAG, "Opening camera: $cameraId, preview=${previewSize.width}x${previewSize.height}")
             imageReader = ImageReader.newInstance(previewSize.width, previewSize.height, ImageFormat.YUV_420_888, 2)
             imageReader!!.setOnImageAvailableListener({ reader ->
-                val image = try {
-                    reader.acquireLatestImage()
-                } catch (_: Exception) {
-                    null
-                }
-                    ?: return@setOnImageAvailableListener
+                val image =
+                    try {
+                        reader.acquireLatestImage()
+                    } catch (_: Exception) {
+                        null
+                    }
+                        ?: return@setOnImageAvailableListener
                 if (!scanning) {
-                    image.close(); return@setOnImageAvailableListener
+                    image.close()
+                    return@setOnImageAvailableListener
                 }
                 try {
                     val inputImage = InputImage.fromMediaImage(image, 0)
-                    scanner.process(inputImage)
+                    scanner
+                        .process(inputImage)
                         .addOnSuccessListener { handleBarcodes(it) }
                         .addOnFailureListener { image.close() }
                         .addOnCompleteListener { image.close() }
@@ -225,40 +270,53 @@ class ScanActivity : Activity() {
 
             if (ActivityCompat.checkSelfPermission(
                     this,
-                    Manifest.permission.CAMERA
+                    Manifest.permission.CAMERA,
                 ) != PackageManager.PERMISSION_GRANTED
-            ) return
+            ) {
+                return
+            }
 
-            manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
-                override fun onOpened(camera: CameraDevice) {
-                    cameraDevice = camera
-                    createPreviewSession(camera, previewSize)
-                }
+            manager.openCamera(
+                cameraId,
+                object : CameraDevice.StateCallback() {
+                    override fun onOpened(camera: CameraDevice) {
+                        cameraDevice = camera
+                        createPreviewSession(camera, previewSize)
+                    }
 
-                override fun onDisconnected(camera: CameraDevice) {
-                    camera.close()
-                }
+                    override fun onDisconnected(camera: CameraDevice) {
+                        camera.close()
+                    }
 
-                override fun onError(camera: CameraDevice, error: Int) {
-                    camera.close()
-                }
-            }, bgHandler)
+                    override fun onError(
+                        camera: CameraDevice,
+                        error: Int,
+                    ) {
+                        camera.close()
+                    }
+                },
+                bgHandler,
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to open camera", e)
         }
     }
 
     @Suppress("DEPRECATION")
-    private fun createPreviewSession(camera: CameraDevice, size: Size) {
+    private fun createPreviewSession(
+        camera: CameraDevice,
+        size: Size,
+    ) {
         try {
             val texture = textureView.surfaceTexture ?: return
             texture.setDefaultBufferSize(size.width, size.height)
             val previewSurface = Surface(texture)
             val readerSurface = imageReader!!.surface
-            val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
-                addTarget(previewSurface)
-                addTarget(readerSurface)
-            }
+            val request =
+                camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                    addTarget(previewSurface)
+                    addTarget(readerSurface)
+                }
             camera.createCaptureSession(
                 listOf(previewSurface, readerSurface),
                 object : CameraCaptureSession.StateCallback() {
@@ -268,7 +326,8 @@ class ScanActivity : Activity() {
                     }
 
                     override fun onConfigureFailed(session: CameraCaptureSession) {}
-                }, bgHandler
+                },
+                bgHandler,
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to create preview session", e)

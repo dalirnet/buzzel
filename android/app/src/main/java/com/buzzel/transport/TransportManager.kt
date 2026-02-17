@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit
 class TransportManager(
     context: Context,
     private val onMessageReceived: (ByteArray) -> Unit,
-    private val onConnectionChanged: (Boolean) -> Unit
+    private val onConnectionChanged: (Boolean) -> Unit,
 ) {
     companion object {
         private const val TAG = "TransportManager"
@@ -25,40 +25,52 @@ class TransportManager(
         private set
 
     init {
-        bleServer = BleGattServer(
-            context = context,
-            onMessageReceived = { onMessageReceived(it) },
-            onConnectionChanged = { connected ->
-                if (connected) activeTransport = ActiveTransport.BLE
-                else if (activeTransport == ActiveTransport.BLE) activeTransport = ActiveTransport.NONE
-                onConnectionChanged(connected)
-            }
-        )
+        bleServer =
+            BleGattServer(
+                context = context,
+                onMessageReceived = { onMessageReceived(it) },
+                onConnectionChanged = { connected ->
+                    if (connected) {
+                        activeTransport = ActiveTransport.BLE
+                    } else if (activeTransport == ActiveTransport.BLE) {
+                        activeTransport = ActiveTransport.NONE
+                    }
+                    onConnectionChanged(connected)
+                },
+            )
     }
 
     val isConnected: Boolean
-        get() = when (activeTransport) {
-            ActiveTransport.BLE -> bleServer.isConnected
-            ActiveTransport.WIFI -> tcpClient?.isConnected == true
-            ActiveTransport.NONE -> false
-        }
+        get() =
+            when (activeTransport) {
+                ActiveTransport.BLE -> bleServer.isConnected
+                ActiveTransport.WIFI -> tcpClient?.isConnected == true
+                ActiveTransport.NONE -> false
+            }
 
     fun startBle() {
         Log.i(TAG, "Starting BLE transport")
         bleServer.start()
     }
 
-    fun startWifiClient(host: String, port: Int) {
+    fun startWifiClient(
+        host: String,
+        port: Int,
+    ) {
         Log.i(TAG, "Starting WiFi transport: $host:$port")
         stopWifiClient()
-        val client = TcpClient(
-            onMessageReceived = { onMessageReceived(it) },
-            onConnectionChanged = { connected ->
-                if (connected) activeTransport = ActiveTransport.WIFI
-                else if (activeTransport == ActiveTransport.WIFI) activeTransport = ActiveTransport.NONE
-                onConnectionChanged(connected)
-            }
-        )
+        val client =
+            TcpClient(
+                onMessageReceived = { onMessageReceived(it) },
+                onConnectionChanged = { connected ->
+                    if (connected) {
+                        activeTransport = ActiveTransport.WIFI
+                    } else if (activeTransport == ActiveTransport.WIFI) {
+                        activeTransport = ActiveTransport.NONE
+                    }
+                    onConnectionChanged(connected)
+                },
+            )
         tcpClient = client
         client.connect(host, port)
     }
@@ -89,8 +101,14 @@ class TransportManager(
         val latch = CountDownLatch(1)
         sendExecutor.execute {
             when (activeTransport) {
-                ActiveTransport.BLE -> if (bleServer.isConnected) bleServer.sendData(payload)
-                ActiveTransport.WIFI -> tcpClient?.sendData(payload)
+                ActiveTransport.BLE -> {
+                    if (bleServer.isConnected) bleServer.sendData(payload)
+                }
+
+                ActiveTransport.WIFI -> {
+                    tcpClient?.sendData(payload)
+                }
+
                 ActiveTransport.NONE -> {}
             }
             latch.countDown()
@@ -125,7 +143,9 @@ class TransportManager(
                 true
             }
 
-            ActiveTransport.NONE -> false
+            ActiveTransport.NONE -> {
+                false
+            }
         }
     }
 }

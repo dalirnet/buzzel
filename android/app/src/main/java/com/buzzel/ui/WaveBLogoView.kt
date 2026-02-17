@@ -8,13 +8,15 @@ import android.view.View
 import androidx.core.graphics.PathParser
 import kotlin.math.min
 
-class WaveBLogoView(context: Context) : View(context) {
-
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-    }
+class WaveBLogoView(
+    context: Context,
+) : View(context) {
+    private val paint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
 
     companion object {
         private const val PATH_DATA =

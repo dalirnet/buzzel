@@ -4,8 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
 
-class ConfigStore(context: Context) {
-
+class ConfigStore(
+    context: Context,
+) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("buzzel_config", Context.MODE_PRIVATE)
 

@@ -4,10 +4,9 @@ import android.util.Log
 import com.buzzel.protocol.Protocol
 
 object FrameCodec {
-
     private const val TAG = "FrameCodec"
-    const val HEADER_SIZE = Protocol.FRAME_HEADER  // 2
-    const val MAX_PAYLOAD = Protocol.MAX_PAYLOAD    // 254
+    const val HEADER_SIZE = Protocol.FRAME_HEADER // 2
+    const val MAX_PAYLOAD = Protocol.MAX_PAYLOAD // 254
 
     fun encode(payload: ByteArray): ByteArray {
         val length = minOf(payload.size, MAX_PAYLOAD)
@@ -18,12 +17,14 @@ object FrameCodec {
         return frame
     }
 
-    fun decodeLength(header: ByteArray): Int {
-        return (header[0].toInt() and 0xFF shl 8) or
-                (header[1].toInt() and 0xFF)
-    }
+    fun decodeLength(header: ByteArray): Int =
+        (header[0].toInt() and 0xFF shl 8) or
+            (header[1].toInt() and 0xFF)
 
-    fun extractFrames(buffer: ByteArray, onFrame: (ByteArray) -> Unit): ByteArray {
+    fun extractFrames(
+        buffer: ByteArray,
+        onFrame: (ByteArray) -> Unit,
+    ): ByteArray {
         var remaining = buffer
         while (remaining.size >= HEADER_SIZE) {
             val length = decodeLength(remaining)

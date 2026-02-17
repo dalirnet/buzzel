@@ -9,7 +9,6 @@ import com.buzzel.model.LogEntry
 import com.buzzel.service.BuzzelService
 
 class BuzzelApp : Application() {
-
     companion object {
         private const val TAG = "BuzzelApp"
         const val CHANNEL_ID = "buzzel_service"
@@ -88,14 +87,15 @@ class BuzzelApp : Application() {
     }
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            getString(R.string.notification_channel_name),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "Buzzel background service"
-            setShowBadge(false)
-        }
+        val channel =
+            NotificationChannel(
+                CHANNEL_ID,
+                getString(R.string.notification_channel_name),
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = "Buzzel background service"
+                setShowBadge(false)
+            }
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(channel)
     }

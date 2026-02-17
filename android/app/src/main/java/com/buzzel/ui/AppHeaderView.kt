@@ -11,8 +11,9 @@ import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
 
-class AppHeaderView(context: Context) : LinearLayout(context) {
-
+class AppHeaderView(
+    context: Context,
+) : LinearLayout(context) {
     private val handler = Handler(Looper.getMainLooper())
     private val titleLabel: TextView
     private val badge: TextView
@@ -33,33 +34,42 @@ class AppHeaderView(context: Context) : LinearLayout(context) {
 
         // Logo
         logo = WaveBLogoView(context)
-        addView(logo, LayoutParams(dp(22), dp(22)).apply {
-            marginEnd = dp(10)
-            topMargin = -dp(1)
-        })
+        addView(
+            logo,
+            LayoutParams(dp(22), dp(22)).apply {
+                marginEnd = dp(10)
+                topMargin = -dp(1)
+            },
+        )
 
         // Title
-        titleLabel = TextView(context).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
-            setTextColor(AppColors.text)
-            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        }
+        titleLabel =
+            TextView(context).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
+                setTextColor(AppColors.text)
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            }
         addView(titleLabel, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
 
         // Badge
-        badge = TextView(context).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
-            setTextColor(AppColors.secondary)
-            setPadding(dp(10), dp(5), dp(10), dp(5))
-            background = GradientDrawable().apply {
-                setColor(AppColors.withAlpha(AppColors.secondary, 26)) // 10%
-                cornerRadius = dp(5).toFloat()
+        badge =
+            TextView(context).apply {
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+                setTextColor(AppColors.secondary)
+                setPadding(dp(10), dp(5), dp(10), dp(5))
+                background =
+                    GradientDrawable().apply {
+                        setColor(AppColors.withAlpha(AppColors.secondary, 26)) // 10%
+                        cornerRadius = dp(5).toFloat()
+                    }
+                visibility = View.GONE
             }
-            visibility = View.GONE
-        }
-        addView(badge, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-            marginStart = dp(10)
-        })
+        addView(
+            badge,
+            LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+                marginStart = dp(10)
+            },
+        )
 
         // Spacer
         addView(View(context), LayoutParams(0, 0, 1f))
@@ -96,7 +106,11 @@ class AppHeaderView(context: Context) : LinearLayout(context) {
         }
     }
 
-    fun setTrailingIcon(pathGroups: Array<Array<String>>, mode: SVGIconView.IconMode, color: Int) {
+    fun setTrailingIcon(
+        pathGroups: Array<Array<String>>,
+        mode: SVGIconView.IconMode,
+        color: Int,
+    ) {
         trailingIcon.pathGroups = pathGroups
         trailingIcon.mode = mode
         trailingIcon.iconColor = color

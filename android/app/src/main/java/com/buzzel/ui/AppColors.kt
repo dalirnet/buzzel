@@ -6,14 +6,19 @@ import android.graphics.Color
 import android.util.TypedValue
 
 object AppColors {
-
     // Resolved from system theme
-    var text: Int = Color.BLACK; private set
-    var secondary: Int = Color.GRAY; private set
-    var surface: Int = Color.WHITE; private set
-    var background: Int = Color.LTGRAY; private set
-    var border: Int = Color.LTGRAY; private set
-    var accent: Int = Color.BLUE; private set
+    var text: Int = Color.BLACK
+        private set
+    var secondary: Int = Color.GRAY
+        private set
+    var surface: Int = Color.WHITE
+        private set
+    var background: Int = Color.LTGRAY
+        private set
+    var border: Int = Color.LTGRAY
+        private set
+    var accent: Int = Color.BLUE
+        private set
 
     // Fixed system colors
     val green: Int = Color.rgb(52, 199, 89)
@@ -24,25 +29,30 @@ object AppColors {
     val onButton: Int = Color.WHITE
 
     // Muted adaptive colors for power button fill
-    var mutedGray: Int = 0; private set
-    var mutedYellow: Int = 0; private set
-    var mutedOrange: Int = 0; private set
-    var mutedGreen: Int = 0; private set
-    var mutedRed: Int = 0; private set
+    var mutedGray: Int = 0
+        private set
+    var mutedYellow: Int = 0
+        private set
+    var mutedOrange: Int = 0
+        private set
+    var mutedGreen: Int = 0
+        private set
+    var mutedRed: Int = 0
+        private set
 
     fun resolve(context: Context) {
-
         text = resolveAttr(context, android.R.attr.textColorPrimary, Color.BLACK)
         secondary = resolveAttr(context, android.R.attr.textColorSecondary, Color.GRAY)
         accent = resolveAttr(context, android.R.attr.colorAccent, Color.rgb(0, 122, 255))
 
         val tv = TypedValue()
         if (context.theme.resolveAttribute(android.R.attr.windowBackground, tv, true)) {
-            surface = if (tv.type >= TypedValue.TYPE_FIRST_COLOR_INT && tv.type <= TypedValue.TYPE_LAST_COLOR_INT) {
-                tv.data
-            } else {
-                Color.WHITE
-            }
+            surface =
+                if (tv.type >= TypedValue.TYPE_FIRST_COLOR_INT && tv.type <= TypedValue.TYPE_LAST_COLOR_INT) {
+                    tv.data
+                } else {
+                    Color.WHITE
+                }
         }
         if (context.theme.resolveAttribute(android.R.attr.colorControlHighlight, tv, true)) {
             background = tv.data
@@ -63,10 +73,16 @@ object AppColors {
         return mode == Configuration.UI_MODE_NIGHT_YES
     }
 
-    fun withAlpha(color: Int, alpha: Int): Int =
-        Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
+    fun withAlpha(
+        color: Int,
+        alpha: Int,
+    ): Int = Color.argb(alpha, Color.red(color), Color.green(color), Color.blue(color))
 
-    private fun resolveAttr(context: Context, attr: Int, fallback: Int): Int {
+    private fun resolveAttr(
+        context: Context,
+        attr: Int,
+        fallback: Int,
+    ): Int {
         val tv = TypedValue()
         return if (context.theme.resolveAttribute(attr, tv, true)) {
             if (tv.type >= TypedValue.TYPE_FIRST_COLOR_INT && tv.type <= TypedValue.TYPE_LAST_COLOR_INT) {
@@ -78,6 +94,8 @@ object AppColors {
                     fallback
                 }
             }
-        } else fallback
+        } else {
+            fallback
+        }
     }
 }

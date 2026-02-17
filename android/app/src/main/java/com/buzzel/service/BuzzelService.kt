@@ -12,7 +12,6 @@ import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.buzzel.BuzzelApp
-import com.buzzel.ui.MainActivity
 import com.buzzel.R
 import com.buzzel.model.LogDirection
 import com.buzzel.model.LogEntry
@@ -21,9 +20,9 @@ import com.buzzel.model.LogStatus
 import com.buzzel.protocol.Protocol
 import com.buzzel.protocol.Signal
 import com.buzzel.transport.TransportManager
+import com.buzzel.ui.MainActivity
 
 class BuzzelService : Service() {
-
     private val app: BuzzelApp get() = application as BuzzelApp
 
     companion object {
@@ -54,31 +53,36 @@ class BuzzelService : Service() {
     private var retryPayload: ByteArray? = null
     private var retryRunnable: Runnable? = null
 
-    private data class FailoverStep(val transport: String)
+    private data class FailoverStep(
+        val transport: String,
+    )
 
     private var failoverSteps: List<FailoverStep> = emptyList()
     private var failoverIndex = 0
 
-    private val pingRunnable = object : Runnable {
-        override fun run() {
-            if (state != ConnectionState.ACTIVE) return
-            if (lastPongTime > 0 && System.currentTimeMillis() - lastPongTime > PONG_TIMEOUT_MS) {
-                Log.w(TAG, "Pong timeout")
-                app.appendLogEntry(
-                    LogEntry(
-                        type = LogEventType.DEVICE_DISCONNECTED, message = "Pong timeout",
-                        direction = LogDirection.LOCAL, status = LogStatus.FAILED,
-                        error = "No pong for ${PONG_TIMEOUT_MS / 1000}s"
+    private val pingRunnable =
+        object : Runnable {
+            override fun run() {
+                if (state != ConnectionState.ACTIVE) return
+                if (lastPongTime > 0 && System.currentTimeMillis() - lastPongTime > PONG_TIMEOUT_MS) {
+                    Log.w(TAG, "Pong timeout")
+                    app.appendLogEntry(
+                        LogEntry(
+                            type = LogEventType.DEVICE_DISCONNECTED,
+                            message = "Pong timeout",
+                            direction = LogDirection.LOCAL,
+                            status = LogStatus.FAILED,
+                            error = "No pong for ${PONG_TIMEOUT_MS / 1000}s",
+                        ),
                     )
-                )
-                handleDisconnect()
-                return
+                    handleDisconnect()
+                    return
+                }
+                Log.d(TAG, "Sending ping")
+                transport.send(Protocol.createPing())
+                handler.postDelayed(this, PING_INTERVAL_MS)
             }
-            Log.d(TAG, "Sending ping")
-            transport.send(Protocol.createPing())
-            handler.postDelayed(this, PING_INTERVAL_MS)
         }
-    }
 
     // MARK: Failover
 
@@ -121,9 +125,10 @@ class BuzzelService : Service() {
             }
         }
 
-        val runnable = Runnable {
-            if (state != ConnectionState.ACTIVE) advanceFailover()
-        }
+        val runnable =
+            Runnable {
+                if (state != ConnectionState.ACTIVE) advanceFailover()
+            }
         failoverRunnable = runnable
         handler.postDelayed(runnable, FAILOVER_DELAY_MS)
     }
@@ -185,18 +190,22 @@ class BuzzelService : Service() {
 
     private fun startHandshakeTimeout() {
         cancelHandshakeTimeout()
-        val runnable = Runnable {
-            if (state == ConnectionState.HANDSHAKING) {
-                Log.w(TAG, "Handshake timeout")
-                app.appendLogEntry(
-                    LogEntry(
-                        type = LogEventType.DEVICE_DISCONNECTED, message = "Handshake timeout",
-                        direction = LogDirection.LOCAL, status = LogStatus.FAILED, error = "No response"
+        val runnable =
+            Runnable {
+                if (state == ConnectionState.HANDSHAKING) {
+                    Log.w(TAG, "Handshake timeout")
+                    app.appendLogEntry(
+                        LogEntry(
+                            type = LogEventType.DEVICE_DISCONNECTED,
+                            message = "Handshake timeout",
+                            direction = LogDirection.LOCAL,
+                            status = LogStatus.FAILED,
+                            error = "No response",
+                        ),
                     )
-                )
-                handleDisconnect()
+                    handleDisconnect()
+                }
             }
-        }
         handshakeTimeoutRunnable = runnable
         handler.postDelayed(runnable, HANDSHAKE_TIMEOUT_MS)
     }
@@ -208,7 +217,10 @@ class BuzzelService : Service() {
 
     // MARK: Reliable Delivery
 
-    fun sendCommand(cmd: Byte, tlvData: ByteArray = ByteArray(0)) {
+    fun sendCommand(
+        cmd: Byte,
+        tlvData: ByteArray = ByteArray(0),
+    ) {
         val seq = nextSeq++
         val payload = Protocol.createCommand(cmd, seq, tlvData)
         retryPayload = payload
@@ -220,17 +232,18 @@ class BuzzelService : Service() {
 
     private fun startRetryTimer() {
         cancelRetry()
-        val runnable = Runnable {
-            if (pendingAckSeq != null && pendingRetries < 3) {
-                pendingRetries++
-                Log.w(TAG, "Retry command seq=${pendingAckSeq}, attempt=$pendingRetries")
-                retryPayload?.let { transport.send(it) }
-                startRetryTimer()
-            } else if (pendingRetries >= 3) {
-                Log.e(TAG, "Command failed after 3 retries")
-                handleDisconnect()
+        val runnable =
+            Runnable {
+                if (pendingAckSeq != null && pendingRetries < 3) {
+                    pendingRetries++
+                    Log.w(TAG, "Retry command seq=$pendingAckSeq, attempt=$pendingRetries")
+                    retryPayload?.let { transport.send(it) }
+                    startRetryTimer()
+                } else if (pendingRetries >= 3) {
+                    Log.e(TAG, "Command failed after 3 retries")
+                    handleDisconnect()
+                }
             }
-        }
         retryRunnable = runnable
         handler.postDelayed(runnable, 5_000L)
     }
@@ -246,39 +259,45 @@ class BuzzelService : Service() {
         super.onCreate()
         Log.i(TAG, "Service created")
 
-        transport = TransportManager(
-            context = this,
-            onMessageReceived = { handleMessage(it) },
-            onConnectionChanged = { connected ->
-                val label = when (transport.activeTransport) {
-                    TransportManager.ActiveTransport.BLE -> "BLE"
-                    TransportManager.ActiveTransport.WIFI -> "WiFi"
-                    TransportManager.ActiveTransport.NONE -> ""
-                }
-                app.appendLogEntry(
-                    LogEntry(
-                        type = if (connected) LogEventType.DEVICE_CONNECTED else LogEventType.DEVICE_DISCONNECTED,
-                        message = if (connected) "Connected to $deviceName via $label" else "Disconnected from $deviceName"
+        transport =
+            TransportManager(
+                context = this,
+                onMessageReceived = { handleMessage(it) },
+                onConnectionChanged = { connected ->
+                    val label =
+                        when (transport.activeTransport) {
+                            TransportManager.ActiveTransport.BLE -> "BLE"
+                            TransportManager.ActiveTransport.WIFI -> "WiFi"
+                            TransportManager.ActiveTransport.NONE -> ""
+                        }
+                    app.appendLogEntry(
+                        LogEntry(
+                            type = if (connected) LogEventType.DEVICE_CONNECTED else LogEventType.DEVICE_DISCONNECTED,
+                            message = if (connected) "Connected to $deviceName via $label" else "Disconnected from $deviceName",
+                        ),
                     )
-                )
-                if (connected) {
-                    transitionTo(ConnectionState.HANDSHAKING)
-                    val code = app.configStore.pairingCode
-                    if (code != null && app.configStore.sessionId != null) {
-                        // Already paired — reconnection: send ready
-                        transport.send(Protocol.createReady())
-                    } else if (code != null) {
-                        // First pairing: send pair.request
-                        transport.send(Protocol.createPairRequest(code))
+                    if (connected) {
+                        transitionTo(ConnectionState.HANDSHAKING)
+                        val code = app.configStore.pairingCode
+                        if (code != null && app.configStore.sessionId != null) {
+                            // Already paired — reconnection: send ready
+                            transport.send(Protocol.createReady())
+                        } else if (code != null) {
+                            // First pairing: send pair.request
+                            transport.send(Protocol.createPairRequest(code))
+                        }
+                    } else if (state != ConnectionState.IDLE) {
+                        handleDisconnect()
                     }
-                } else if (state != ConnectionState.IDLE) {
-                    handleDisconnect()
-                }
-            }
-        )
+                },
+            )
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         Log.i(TAG, "Service started")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
@@ -321,8 +340,9 @@ class BuzzelService : Service() {
                 app.appendLogEntry(
                     LogEntry(
                         type = LogEventType.DEVICE_CONNECTED,
-                        message = "$deviceName is ready", direction = LogDirection.INCOMING
-                    )
+                        message = "$deviceName is ready",
+                        direction = LogDirection.INCOMING,
+                    ),
                 )
                 if (state == ConnectionState.HANDSHAKING) {
                     transitionTo(ConnectionState.ACTIVE)
@@ -333,8 +353,9 @@ class BuzzelService : Service() {
                 app.appendLogEntry(
                     LogEntry(
                         type = LogEventType.DEVICE_DISCONNECTED,
-                        message = "$deviceName said goodbye", direction = LogDirection.INCOMING
-                    )
+                        message = "$deviceName said goodbye",
+                        direction = LogDirection.INCOMING,
+                    ),
                 )
                 handleDisconnect()
             }
@@ -345,13 +366,16 @@ class BuzzelService : Service() {
                 app.appendLogEntry(
                     LogEntry(
                         type = LogEventType.DEVICE_DISCONNECTED,
-                        message = "$deviceName unpaired", direction = LogDirection.INCOMING
-                    )
+                        message = "$deviceName unpaired",
+                        direction = LogDirection.INCOMING,
+                    ),
                 )
                 transitionTo(ConnectionState.IDLE)
             }
 
-            Signal.PING -> transport.send(Protocol.createPong())
+            Signal.PING -> {
+                transport.send(Protocol.createPong())
+            }
 
             Signal.PONG -> {
                 lastPongTime = System.currentTimeMillis()
@@ -363,17 +387,19 @@ class BuzzelService : Service() {
                     app.appendLogEntry(
                         LogEntry(
                             type = LogEventType.PAIRING_COMPLETE,
-                            message = "Paired with $deviceName", direction = LogDirection.INCOMING
-                        )
+                            message = "Paired with $deviceName",
+                            direction = LogDirection.INCOMING,
+                        ),
                     )
                     transitionTo(ConnectionState.ACTIVE)
                 } else {
                     app.appendLogEntry(
                         LogEntry(
                             type = LogEventType.PAIRING_FAILED,
-                            message = "Pairing rejected", direction = LogDirection.INCOMING,
-                            status = LogStatus.FAILED
-                        )
+                            message = "Pairing rejected",
+                            direction = LogDirection.INCOMING,
+                            status = LogStatus.FAILED,
+                        ),
                     )
                     handleDisconnect()
                 }
@@ -410,13 +436,15 @@ class BuzzelService : Service() {
     private fun buildNotification(): Notification {
         val intent = Intent(this, MainActivity::class.java)
         val pending = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
-        val text = when (state) {
-            ConnectionState.ACTIVE -> "Connected"
-            ConnectionState.HANDSHAKING -> "Handshaking..."
-            ConnectionState.CONNECTING -> "Connecting..."
-            ConnectionState.IDLE -> "Connecting..."
-        }
-        return NotificationCompat.Builder(this, BuzzelApp.CHANNEL_ID)
+        val text =
+            when (state) {
+                ConnectionState.ACTIVE -> "Connected"
+                ConnectionState.HANDSHAKING -> "Handshaking..."
+                ConnectionState.CONNECTING -> "Connecting..."
+                ConnectionState.IDLE -> "Connecting..."
+            }
+        return NotificationCompat
+            .Builder(this, BuzzelApp.CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_title))
             .setContentText(text)
             .setSmallIcon(android.R.drawable.stat_notify_sync)

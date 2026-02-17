@@ -10,62 +10,78 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
-class OrbitRingsView(context: Context) : FrameLayout(context) {
-
-    private data class OrbitDot(val offset: Double, val size: Float, val color: Int)
+class OrbitRingsView(
+    context: Context,
+) : FrameLayout(context) {
+    private data class OrbitDot(
+        val offset: Double,
+        val size: Float,
+        val color: Int,
+    )
 
     private data class Ring(
         val radius: Float,
         val durationSeconds: Double, // negative = counter-clockwise
-        val dots: List<OrbitDot>
+        val dots: List<OrbitDot>,
     )
 
     // 1.25x scale from macOS pt values for visual parity on phone screens
-    private val rings = listOf(
-        Ring(
-            100f, 12.0, listOf(
-                OrbitDot(0.0, 7.5f, AppColors.accent),
-                OrbitDot(0.55, 5f, AppColors.green)
-            )
-        ),
-        Ring(
-            131f, -18.0, listOf(
-                OrbitDot(0.2, 6f, AppColors.orange),
-                OrbitDot(0.7, 4f, AppColors.accent)
-            )
-        ),
-        Ring(
-            162f, 25.0, listOf(
-                OrbitDot(0.4, 5f, AppColors.red),
-                OrbitDot(0.85, 4f, AppColors.green)
-            )
+    private val rings =
+        listOf(
+            Ring(
+                100f,
+                12.0,
+                listOf(
+                    OrbitDot(0.0, 7.5f, AppColors.accent),
+                    OrbitDot(0.55, 5f, AppColors.green),
+                ),
+            ),
+            Ring(
+                131f,
+                -18.0,
+                listOf(
+                    OrbitDot(0.2, 6f, AppColors.orange),
+                    OrbitDot(0.7, 4f, AppColors.accent),
+                ),
+            ),
+            Ring(
+                162f,
+                25.0,
+                listOf(
+                    OrbitDot(0.4, 5f, AppColors.red),
+                    OrbitDot(0.85, 4f, AppColors.green),
+                ),
+            ),
         )
-    )
 
-    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-    }
+    private val ringPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+        }
 
-    private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
+    private val dotPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+        }
 
-    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
+    private val glowPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+        }
 
     private var startTime = System.nanoTime()
     private var running = false
 
     private val choreographer = Choreographer.getInstance()
-    private val frameCallback = object : Choreographer.FrameCallback {
-        override fun doFrame(frameTimeNanos: Long) {
-            if (running) {
-                invalidate()
-                choreographer.postFrameCallback(this)
+    private val frameCallback =
+        object : Choreographer.FrameCallback {
+            override fun doFrame(frameTimeNanos: Long) {
+                if (running) {
+                    invalidate()
+                    choreographer.postFrameCallback(this)
+                }
             }
         }
-    }
 
     init {
         setWillNotDraw(false)

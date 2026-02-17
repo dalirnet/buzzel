@@ -11,37 +11,41 @@ import kotlin.math.min
 class SVGIconView(
     context: Context,
     pathGroups: Array<Array<String>> = emptyArray(),
-    var mode: IconMode = IconMode.STROKE
+    var mode: IconMode = IconMode.STROKE,
 ) : View(context) {
-
     var pathGroups: Array<Array<String>> = pathGroups
         set(value) {
-            field = value; invalidate()
+            field = value
+            invalidate()
         }
 
     enum class IconMode { STROKE, FILL, MIXED }
 
     var iconColor: Int = 0xFF000000.toInt()
         set(value) {
-            field = value; invalidate()
+            field = value
+            invalidate()
         }
 
     var iconOpacity: Float = 1f
         set(value) {
-            field = value; invalidate()
+            field = value
+            invalidate()
         }
 
     var strokeWidth: Float = 1.5f
 
-    private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-    }
+    private val strokePaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
 
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.FILL
-    }
+    private val fillPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+        }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -89,12 +93,20 @@ class SVGIconView(
         }
     }
 
-    private fun drawPath(canvas: Canvas, pathData: String, scale: Float, ox: Float, oy: Float, paint: Paint) {
+    private fun drawPath(
+        canvas: Canvas,
+        pathData: String,
+        scale: Float,
+        ox: Float,
+        oy: Float,
+        paint: Paint,
+    ) {
         val parsed = PathParser.createPathFromPathData(pathData)
-        val matrix = Matrix().apply {
-            postScale(scale, scale)
-            postTranslate(ox, oy)
-        }
+        val matrix =
+            Matrix().apply {
+                postScale(scale, scale)
+                postTranslate(ox, oy)
+            }
         parsed.transform(matrix)
         canvas.drawPath(parsed, paint)
     }

@@ -8,7 +8,8 @@ enum class PowerButtonState {
     UNPAIRED,
     CONNECTING,
     CONNECTED,
-    DISCONNECTED;
+    DISCONNECTED,
+    ;
 
     companion object {
         fun current(app: BuzzelApp): PowerButtonState {

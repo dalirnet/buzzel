@@ -8,7 +8,7 @@ import java.net.Socket
 
 class TcpClient(
     private val onMessageReceived: (ByteArray) -> Unit,
-    private val onConnectionChanged: (Boolean) -> Unit
+    private val onConnectionChanged: (Boolean) -> Unit,
 ) {
     companion object {
         private const val TAG = "TcpClient"
@@ -24,7 +24,10 @@ class TcpClient(
     val isConnected: Boolean
         get() = socket?.isConnected == true && socket?.isClosed == false
 
-    fun connect(host: String, port: Int) {
+    fun connect(
+        host: String,
+        port: Int,
+    ) {
         Log.i(TAG, "Connecting to $host:$port")
         stop()
         running = true
@@ -55,7 +58,10 @@ class TcpClient(
         }
     }
 
-    private fun connectLoop(host: String, port: Int) {
+    private fun connectLoop(
+        host: String,
+        port: Int,
+    ) {
         try {
             val sock = Socket()
             sock.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
@@ -90,7 +96,10 @@ class TcpClient(
         }
     }
 
-    private fun readExact(input: InputStream, size: Int): ByteArray? {
+    private fun readExact(
+        input: InputStream,
+        size: Int,
+    ): ByteArray? {
         val buf = ByteArray(size)
         var read = 0
         while (read < size) {
