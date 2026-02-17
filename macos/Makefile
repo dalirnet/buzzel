@@ -1,3 +1,11 @@
+.PHONY: init
+init:
+	sh init.sh
+
+.PHONY: format
+format:
+	sh format.sh
+
 .PHONY: build
 build:
 	sh build.sh
@@ -16,6 +24,14 @@ run: build
 	killall Buzzel 2>/dev/null || true
 	sleep 0.5
 	open build/Buzzel.app
+
+.PHONY: test
+test:
+	swiftc -o build/test-protocol \
+		Sources/Services/Protocol.swift \
+		Sources/Services/FrameCodec.swift \
+		Tests/ProtocolTests.swift
+	./build/test-protocol
 
 .PHONY: clean
 clean:

@@ -1,432 +1,478 @@
+import Combine
 import Foundation
 import os.log
 
 private let log = OSLog(subsystem: "com.buzzel", category: "TransportManager")
 
-// MARK: - Transport Manager
+class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate {
 
-class TransportManager: ObservableObject, BleCentralDelegate, TcpClientDelegate {
+  static let shared = TransportManager()
 
-    static let shared = TransportManager()
+  private static let pongTimeout: TimeInterval = 10
+  private static let pingInterval: TimeInterval = 30
+  private static let failoverTimeout: TimeInterval = 10
+  private static let handshakeTimeout: TimeInterval = 30
 
-    private static let responseTimeout: TimeInterval = 10
-    private static let heartbeatTimeout: TimeInterval = 45
-    private static let pingInterval: TimeInterval = 15
+  enum ConnectionState { case idle, connecting, handshaking, active }
 
-    // MARK: Connection State
+  enum Transport: String { case wifi, ble }
 
-    enum ConnectionState {
-        case disconnected
-        case scanning
-        case active
+  private struct FailoverStep {
+    let transport: Transport
+  }
+
+  @Published var connectionState: ConnectionState = .idle
+  @Published var hasBeenConnected = false
+  @Published var isConnected = false
+  @Published var isPairing = false
+  @Published var pairingError: String?
+  @Published var logEntries: [LogEntry] = []
+  @Published var activeTransport: String = ""
+  @Published var bleAuthorized = false
+
+  var onPairingComplete: ((String) -> Void)?
+  var onDeviceReady: (() -> Void)?
+
+  let ble = BleCentral()
+  private let tcpServer = TcpServer()
+  private var bleSub: AnyCancellable?
+  private let maxLogEntries = 100
+  private let deviceName = "Android"
+
+  private var failoverSteps: [FailoverStep] = []
+  private var failoverIndex = 0
+  private var failoverWork: DispatchWorkItem?
+  private var currentTransport: Transport?
+
+  private var pairingSessionId: String?
+  private var pairingCode: String?
+
+  // Keepalive
+  private var lastPongTime: Date?
+  private var pingTimer: DispatchSourceTimer?
+  private var pongTimeoutWork: DispatchWorkItem?
+
+  // Handshake timeout
+  private var handshakeWork: DispatchWorkItem?
+
+  // Reliable delivery
+  private var nextSeq: UInt16 = 0
+  private var pendingAckSeq: UInt16?
+  private var pendingRetries = 0
+  private var retryPayload: Data?
+  private var retryWork: DispatchWorkItem?
+
+  init() {
+    ble.delegate = self
+    tcpServer.delegate = self
+    bleSub = ble.$bluetoothAuthorization
+      .receive(on: DispatchQueue.main)
+      .map { $0 == .allowedAlways }
+      .assign(to: \.bleAuthorized, on: self)
+  }
+
+  // MARK: - Failover
+
+  private func buildFailoverSteps(prefer: String) {
+    let primary: Transport = prefer == "ble" ? .ble : .wifi
+    let secondary: Transport = primary == .wifi ? .ble : .wifi
+    failoverSteps = [FailoverStep(transport: primary), FailoverStep(transport: secondary)]
+    os_log(
+      "Failover steps: %{public}@", log: log, type: .debug,
+      failoverSteps.map { $0.transport.rawValue }.joined(separator: ", "))
+  }
+
+  private func startFailover(prefer: String) {
+    os_log("Starting failover, prefer=%{public}@", log: log, type: .info, prefer)
+    buildFailoverSteps(prefer: prefer)
+    failoverIndex = 0
+    tryNextFailoverStep()
+  }
+
+  private func tryNextFailoverStep() {
+    failoverWork?.cancel()
+    guard !failoverSteps.isEmpty else { return }
+    let step = failoverSteps[failoverIndex % failoverSteps.count]
+
+    os_log("Failover: trying %{public}@", log: log, type: .debug, step.transport.rawValue)
+    stopCurrentTransport()
+    transitionTo(.connecting)
+
+    switch step.transport {
+    case .wifi:
+      currentTransport = .wifi
+      tcpServer.start(port: BuzzelProtocol.tcpPort)
+    case .ble:
+      currentTransport = .ble
+      ble.start()
     }
 
-    // MARK: Published State
-
-    @Published var connectionState: ConnectionState = .disconnected
-    @Published var isConnected = false
-    @Published var isPairing = false
-    @Published var pairingError: String?
-    @Published var logEntries: [LogEntry] = []
-
-    // MARK: Callbacks
-
-    var onSmsReceived: ((SmsPayload) -> Void)?
-    var onQueueFlushed: (([SmsPayload]) -> Void)?
-    var onPairingComplete: ((String) -> Void)?
-    var onDeviceReady: (() -> Void)?
-
-    // MARK: Private
-
-    let ble = BleCentral()
-    private let tcp = TcpClient()
-    private let maxLogEntries = 200
-    private var pendingPairingCode: String?
-    private var recentMessageIds: [String] = []
-    private let maxRecentIds = 50
-    private var pendingTimeouts: [String: DispatchWorkItem] = [:]
-    private var heartbeatTimer: DispatchWorkItem?
-    private var pingTimer: DispatchSourceTimer?
-    private let deviceName = "Android"
-
-    // MARK: Init
-
-    init() {
-        ble.delegate = self
-        tcp.delegate = self
+    let work = DispatchWorkItem { [weak self] in
+      guard let self = self, self.connectionState != .active else { return }
+      self.failoverIndex += 1
+      self.tryNextFailoverStep()
     }
+    failoverWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.failoverTimeout, execute: work)
+  }
 
-    // MARK: - State Machine
+  private func stopCurrentTransport() {
+    os_log("Stopping current transport", log: log, type: .debug)
+    tcpServer.stop()
+    ble.stop()
+    currentTransport = nil
+  }
 
-    private func transitionTo(_ newState: ConnectionState) {
-        let oldState = connectionState
-        guard oldState != newState || newState == .active else { return }
-        os_log("State: %{public}@ -> %{public}@", log: log, type: .debug, "\(oldState)", "\(newState)")
-        connectionState = newState
+  private func cancelFailover() {
+    os_log("Failover cancelled", log: log, type: .debug)
+    failoverWork?.cancel()
+    failoverWork = nil
+  }
 
-        switch newState {
-        case .disconnected:
-            cancelAllTimeouts()
-            stopHeartbeat()
-            DispatchQueue.main.async { self.isConnected = false }
+  // MARK: - State Machine
 
-        case .scanning:
-            cancelAllTimeouts()
-            stopHeartbeat()
-            DispatchQueue.main.async { self.isConnected = false }
+  private func transitionTo(_ newState: ConnectionState) {
+    let oldState = connectionState
+    guard oldState != newState || newState == .active else { return }
+    os_log(
+      "State: %{public}@ → %{public}@", log: log, type: .info,
+      String(describing: oldState), String(describing: newState))
+    connectionState = newState
 
-        case .active:
-            DispatchQueue.main.async { self.isConnected = true }
-            resetHeartbeat()
-            startPingTimer()
-        }
+    switch newState {
+    case .idle:
+      stopKeepalive()
+      cancelHandshakeTimeout()
+      cancelRetry()
+      DispatchQueue.main.async {
+        self.isConnected = false
+        self.activeTransport = ""
+      }
+    case .connecting:
+      DispatchQueue.main.async {
+        self.isConnected = false
+        self.activeTransport = ""
+      }
+    case .handshaking:
+      startHandshakeTimeout()
+      DispatchQueue.main.async {
+        self.isConnected = false
+        self.activeTransport = ""
+      }
+    case .active:
+      cancelFailover()
+      cancelHandshakeTimeout()
+      lastPongTime = Date()
+      DispatchQueue.main.async {
+        self.hasBeenConnected = true
+        self.isConnected = true
+        self.activeTransport = self.currentTransport?.rawValue.uppercased() ?? ""
+      }
+      startKeepalive()
     }
+  }
 
-    // MARK: - Heartbeat
+  // MARK: - Handshake Timeout
 
-    private func resetHeartbeat() {
-        heartbeatTimer?.cancel()
-        let work = DispatchWorkItem { [weak self] in
-            guard let self = self else { return }
-            self.heartbeatTimer = nil
-            os_log("Heartbeat timeout", log: log, type: .error)
-            self.appendEntry(.deviceDisconnected,
-                             "No heartbeat from \(self.deviceName)",
-                             status: .failed,
-                             error: "No data for \(Int(Self.heartbeatTimeout))s")
-            self.transitionTo(.scanning)
-            self.ble.disconnect()
-        }
-        heartbeatTimer = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.heartbeatTimeout, execute: work)
+  private func startHandshakeTimeout() {
+    cancelHandshakeTimeout()
+    let work = DispatchWorkItem { [weak self] in
+      guard let self = self, self.connectionState == .handshaking else { return }
+      os_log("Handshake timeout", log: log, type: .error)
+      self.appendEntry(
+        .deviceDisconnected, "Handshake timeout",
+        status: .failed, error: "No response")
+      self.handleDisconnect()
     }
+    handshakeWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.handshakeTimeout, execute: work)
+  }
 
-    private func startPingTimer() {
-        stopPingTimer()
-        let timer = DispatchSource.makeTimerSource(queue: .main)
-        timer.schedule(deadline: .now() + Self.pingInterval, repeating: Self.pingInterval)
-        timer.setEventHandler { [weak self] in
-            guard let self = self, self.connectionState == .active else { return }
-            self.sendPing()
-        }
-        pingTimer = timer
-        timer.resume()
+  private func cancelHandshakeTimeout() {
+    handshakeWork?.cancel()
+    handshakeWork = nil
+  }
+
+  // MARK: - Keepalive
+
+  private func startKeepalive() {
+    stopKeepalive()
+    let timer = DispatchSource.makeTimerSource(queue: .main)
+    timer.schedule(deadline: .now() + Self.pingInterval, repeating: Self.pingInterval)
+    timer.setEventHandler { [weak self] in
+      guard let self = self, self.connectionState == .active else { return }
+      // Check pong timeout
+      if let last = self.lastPongTime, Date().timeIntervalSince(last) > Self.pongTimeout {
+        os_log("Pong timeout", log: log, type: .error)
+        self.appendEntry(
+          .deviceDisconnected, "Pong timeout",
+          status: .failed, error: "No pong for \(Int(Self.pongTimeout))s")
+        self.handleDisconnect()
+        return
+      }
+      self.send(BuzzelProtocol.createPing())
     }
+    pingTimer = timer
+    timer.resume()
+  }
 
-    private func stopPingTimer() {
-        pingTimer?.cancel()
-        pingTimer = nil
+  private func stopKeepalive() {
+    pingTimer?.cancel()
+    pingTimer = nil
+    pongTimeoutWork?.cancel()
+    pongTimeoutWork = nil
+  }
+
+  // MARK: - Reliable Delivery
+
+  func sendCommand(cmd: UInt8, tlvData: Data = Data()) {
+    let seq = nextSeq
+    nextSeq &+= 1
+    let payload = BuzzelProtocol.createCommand(cmd: cmd, seq: seq, tlvData: tlvData)
+    retryPayload = payload
+    pendingAckSeq = seq
+    pendingRetries = 0
+    send(payload)
+    startRetryTimer()
+  }
+
+  private func startRetryTimer() {
+    cancelRetry()
+    let work = DispatchWorkItem { [weak self] in
+      guard let self = self else { return }
+      if self.pendingAckSeq != nil && self.pendingRetries < 3 {
+        self.pendingRetries += 1
+        os_log(
+          "Retry command seq=%d, attempt=%d", log: log, type: .info,
+          self.pendingAckSeq ?? 0, self.pendingRetries)
+        if let payload = self.retryPayload { self.send(payload) }
+        self.startRetryTimer()
+      } else if self.pendingRetries >= 3 {
+        os_log("Command failed after 3 retries", log: log, type: .error)
+        self.handleDisconnect()
+      }
     }
+    retryWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 5, execute: work)
+  }
 
-    private func stopHeartbeat() {
-        heartbeatTimer?.cancel()
-        heartbeatTimer = nil
-        stopPingTimer()
+  private func cancelRetry() {
+    retryWork?.cancel()
+    retryWork = nil
+  }
+
+  // MARK: - Activity Log
+
+  func appendEntry(
+    _ type: LogEventType, _ message: String,
+    direction: LogDirection = .local, status: LogStatus = .success, error: String? = nil
+  ) {
+    let entry = LogEntry(
+      type: type, message: message, direction: direction, status: status, error: error)
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      self.logEntries.append(entry)
+      if self.logEntries.count > self.maxLogEntries { self.logEntries.removeFirst() }
     }
+  }
 
-    // MARK: - Activity Log
+  // MARK: - Connection
 
-    func appendEntry(_ type: LogEventType, _ message: String,
-                     direction: LogDirection = .local, status: LogStatus = .success, error: String? = nil) {
-        let entry = LogEntry(type: type, message: message, direction: direction, status: status, error: error)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.logEntries.append(entry)
-            if self.logEntries.count > self.maxLogEntries {
-                self.logEntries.removeFirst()
-            }
-        }
+  func start() {
+    os_log("TransportManager started", log: log, type: .info)
+    let prefer = AppStore.shared.transportMethod
+    startFailover(prefer: prefer)
+  }
+
+  func stop() {
+    os_log("TransportManager stopped", log: log, type: .info)
+    send(BuzzelProtocol.createGoodbye())
+    transitionTo(.idle)
+    stopCurrentTransport()
+  }
+
+  func unpair() {
+    os_log("Unpair requested", log: log, type: .info)
+    if connectionState == .active { send(BuzzelProtocol.createUnpair()) }
+    hasBeenConnected = false
+    transitionTo(.idle)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+      self?.stopCurrentTransport()
     }
+  }
 
-    // MARK: - Response Timeout
+  private func handleDisconnect() {
+    os_log("Handling disconnect", log: log, type: .info)
+    transitionTo(.idle)
+    stopCurrentTransport()
+    startFailover(prefer: AppStore.shared.transportMethod)
+  }
 
-    private func expectResponse(_ responseType: String, label: String, logType: LogEventType) {
-        cancelTimeout(responseType)
-        let work = DispatchWorkItem { [weak self] in
-            self?.pendingTimeouts.removeValue(forKey: responseType)
-            self?.appendEntry(logType, "\(label) timed out", direction: .outgoing, status: .failed, error: "No response after \(Int(Self.responseTimeout))s")
-        }
-        pendingTimeouts[responseType] = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.responseTimeout, execute: work)
+  // MARK: - Pairing Mode
+
+  func startPairingMode(sessionId: String, code: String) {
+    os_log("Entering pairing mode", log: log, type: .info)
+    pairingSessionId = sessionId
+    pairingCode = code
+    isPairing = false
+    pairingError = nil
+    startFailover(prefer: AppStore.shared.transportMethod)
+  }
+
+  func stopPairingMode() {
+    os_log("Exiting pairing mode", log: log, type: .info)
+    pairingSessionId = nil
+    pairingCode = nil
+    isPairing = false
+    cancelFailover()
+    stopCurrentTransport()
+    transitionTo(.idle)
+  }
+
+  // MARK: - Pairing
+
+  private func handleIncomingPairingRequest(_ payload: Data) {
+    os_log("Pairing request received", log: log, type: .info)
+    guard let code = BuzzelProtocol.parsePairRequestCode(payload) else { return }
+
+    if code == pairingCode {
+      send(BuzzelProtocol.createPairResponse(accepted: true))
+      DispatchQueue.main.async { [weak self] in
+        guard let self = self else { return }
+        self.appendEntry(.pairingComplete, "Paired with \(self.deviceName)", direction: .incoming)
+        self.pairingCode = nil
+        self.pairingSessionId = nil
+        self.transitionTo(.active)
+        self.onPairingComplete?(self.deviceName)
+        self.isPairing = false
+        self.onDeviceReady?()
+      }
+    } else {
+      send(BuzzelProtocol.createPairResponse(accepted: false, reason: 0x01))
+      DispatchQueue.main.async { [weak self] in
+        self?.pairingError = "Invalid pairing code"
+        self?.appendEntry(
+          .pairingFailed, "Invalid pairing code", direction: .incoming, status: .failed)
+      }
     }
+  }
 
-    private func fulfillTimeout(_ responseType: String) {
-        if let work = pendingTimeouts.removeValue(forKey: responseType) {
-            work.cancel()
-        }
+  // MARK: - Message Handling
+
+  private func send(_ data: Data) {
+    guard let transport = currentTransport else { return }
+    os_log("Send %d bytes via %{public}@", log: log, type: .debug, data.count, transport.rawValue)
+
+    switch transport {
+    case .ble:
+      guard ble.isConnected else { return }
+      _ = ble.send(data)
+    case .wifi:
+      guard tcpServer.isConnected else { return }
+      _ = tcpServer.send(data)
     }
+  }
 
-    private func cancelTimeout(_ responseType: String) {
-        if let work = pendingTimeouts.removeValue(forKey: responseType) {
-            work.cancel()
-        }
-    }
+  private func handleIncoming(_ payload: Data) {
+    guard let signalId = BuzzelProtocol.parseSignalId(payload) else { return }
+    os_log("Received signal 0x%02x (%d bytes)", log: log, type: .debug, signalId, payload.count)
 
-    private func cancelAllTimeouts() {
-        for (_, work) in pendingTimeouts { work.cancel() }
-        pendingTimeouts.removeAll()
-    }
+    if connectionState == .active { lastPongTime = Date() }
 
-    private func notifyDeviceReady() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
-            self?.onDeviceReady?()
-        }
-    }
+    switch signalId {
+    case Signal.pairRequest:
+      handleIncomingPairingRequest(payload)
 
-    // MARK: - Connection
-
-    func start() {
-        os_log("start", log: log, type: .debug)
-        transitionTo(.scanning)
-        ble.start()
-    }
-
-    func connectTcp(host: String, port: UInt16) {
-        tcp.connect(host: host, port: port)
-    }
-
-    func stop() {
-        sendGoodbye()
-        transitionTo(.disconnected)
-        ble.stop()
-        tcp.disconnect()
-    }
-
-    func unpair() {
-        transitionTo(.disconnected)
-        tcp.disconnect()
-
-        if ble.isConnected {
-            sendUnpair()
-            // Delay disconnect so the unpair write has time to complete
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.ble.stop()
-            }
+    case Signal.pairResponse:
+      if let result = BuzzelProtocol.parsePairResponse(payload) {
+        if result.accepted {
+          appendEntry(.pairingComplete, "Paired with \(deviceName)", direction: .incoming)
+          transitionTo(.active)
+          onDeviceReady?()
         } else {
-            ble.stop()
+          appendEntry(.pairingFailed, "Pairing rejected", direction: .incoming, status: .failed)
+          handleDisconnect()
         }
-    }
+      }
 
-    // MARK: - Discovery
-
-    func startDiscovery() {
-        ble.startDiscovery()
-    }
-
-    func stopDiscovery() {
-        ble.stopDiscovery()
-    }
-
-    // MARK: - Pairing
-
-    func connectAndPair(device: DiscoveredDevice, code: String) {
-        appendEntry(.pairingStarted, "Pairing with \(device.name)...", direction: .outgoing)
-        isPairing = true
-        pairingError = nil
-        pendingPairingCode = code
-
-        if ble.isConnected && ble.peripheralIdentifier == device.id {
-            sendPairingRequest()
-        } else {
-            ble.connect(to: device)
-        }
-    }
-
-    func cancelPairing() {
-        isPairing = false
-        pendingPairingCode = nil
-        cancelTimeout(MessageType.pairingResponse)
-    }
-
-    private func sendPairingRequest() {
-        guard let code = pendingPairingCode else { return }
-
-        guard let data = BuzzelProtocol.createPairingRequest(code: code) else {
-            pairingError = "Failed to create pairing request"
-            isPairing = false
-            appendEntry(.pairingFailed, "Pairing failed", direction: .outgoing, status: .failed, error: "Failed to create pairing request")
-            return
-        }
-        if ble.isConnected {
-            _ = ble.send(data)
-            expectResponse(MessageType.pairingResponse, label: "Pairing", logType: .pairingFailed)
-        }
-    }
-
-    private func handlePairingResponse() {
-        fulfillTimeout(MessageType.pairingResponse)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.appendEntry(.pairingComplete, "Paired with \(self.deviceName)", direction: .incoming)
-            self.pendingPairingCode = nil
-            self.transitionTo(.active)
-            self.onPairingComplete?(self.deviceName)
-            self.isPairing = false
-            self.sendReady()
-            self.notifyDeviceReady()
-        }
-    }
-
-    // MARK: - Messages
-
-    func sendReady() {
-        guard let data = BuzzelProtocol.createReady() else { return }
-        send(data)
-    }
-
-    func sendGoodbye() {
-        guard let data = BuzzelProtocol.createGoodbye() else { return }
-        send(data)
-    }
-
-    func sendUnpair() {
-        guard let data = BuzzelProtocol.createUnpair() else { return }
-        send(data)
-    }
-
-    func sendPing() {
-        guard let data = BuzzelProtocol.createMessage(type: MessageType.ping) else { return }
-        send(data)
-    }
-
-    func sendPong() {
-        guard let data = BuzzelProtocol.createPong() else { return }
-        send(data)
-    }
-
-    func sendConfig(transport: String, wifiHost: String?, wifiPort: Int, filters: [FilterRule]) {
-        guard let data = BuzzelProtocol.createConfigSync(
-            transport: transport, wifiHost: wifiHost, wifiPort: wifiPort, filters: filters
-        ) else { return }
-        appendEntry(.configSynced, "Syncing \(filters.count) filters to \(deviceName)", direction: .outgoing)
-        send(data)
-        expectResponse(MessageType.configAck, label: "Config sync", logType: .configSynced)
-    }
-
-    func syncConfig(store: AppStore) {
-        sendConfig(
-            transport: store.transportMethod,
-            wifiHost: store.wifiHost.isEmpty ? nil : store.wifiHost,
-            wifiPort: store.wifiPort,
-            filters: store.filters
-        )
-    }
-
-    private func send(_ data: Data) {
-        let type = BuzzelProtocol.parseType(data) ?? "?"
-        guard ble.isConnected || tcp.isConnected else {
-            os_log("send(%{public}@) — no transport connected", log: log, type: .error, type)
-            appendEntry(.deviceDisconnected, "Failed to send: not connected", status: .failed, error: "No transport connected")
-            return
-        }
-        os_log("send(%{public}@)", log: log, type: .debug, type)
-        if ble.isConnected {
-            _ = ble.send(data)
-        }
-        if tcp.isConnected {
-            _ = tcp.send(data)
-        }
-    }
-
-    private func isDuplicate(_ raw: Data) -> Bool {
-        guard let dict = try? JSONSerialization.jsonObject(with: raw) as? [String: Any],
-              let id = dict["id"] as? String else { return false }
-        if recentMessageIds.contains(id) { return true }
-        recentMessageIds.append(id)
-        if recentMessageIds.count > maxRecentIds {
-            recentMessageIds.removeFirst()
-        }
-        return false
-    }
-
-    private func handleIncoming(_ raw: Data) {
-        guard let type = BuzzelProtocol.parseType(raw) else {
-            os_log("handleIncoming — failed to parse type", log: log, type: .error)
-            return
-        }
-        os_log("recv: %{public}@", log: log, type: .debug, type)
-
-        // Reset heartbeat on any incoming message
-        if connectionState == .active {
-            resetHeartbeat()
-        }
-
-        if isDuplicate(raw) { return }
-
-        if type == MessageType.pairingResponse {
-            handlePairingResponse()
-            return
-        }
-
-        DispatchQueue.main.async { [weak self] in
-            switch type {
-            case MessageType.sms:
-                if let sms = BuzzelProtocol.parseSms(raw) {
-                    self?.appendEntry(.smsReceived, "Received SMS from \(sms.contactName ?? sms.sender)", direction: .incoming)
-                    self?.onSmsReceived?(sms)
-                }
-            case MessageType.queueFlush:
-                let messages = BuzzelProtocol.parseQueueFlush(raw)
-                self?.appendEntry(.queueFlushed, "Delivered \(messages.count) queued messages", direction: .incoming)
-                self?.onQueueFlushed?(messages)
-            case MessageType.ping:
-                self?.sendPong()
-            case MessageType.pong:
-                break // heartbeat already reset above
-            case MessageType.goodbye:
-                self?.appendEntry(.deviceDisconnected, "\(self?.deviceName ?? "Android") said goodbye", direction: .incoming)
-                self?.transitionTo(.scanning)
-                self?.ble.disconnect()
-            case MessageType.configAck:
-                self?.fulfillTimeout(MessageType.configAck)
-                self?.appendEntry(.configSynced, "\(self?.deviceName ?? "Android") confirmed settings", direction: .incoming)
-            default:
-                break
-            }
-        }
-    }
-
-    // MARK: - BleCentralDelegate
-
-    func bleDidConnect() {
-        os_log("bleDidConnect", log: log, type: .debug)
-        appendEntry(.deviceConnected, "Connected to \(deviceName)")
+    case Signal.ready:
+      appendEntry(.deviceConnected, "\(deviceName) is ready", direction: .incoming)
+      if connectionState == .handshaking {
         transitionTo(.active)
-        if isPairing {
-            sendPairingRequest()
-        } else {
-            sendReady()
-            notifyDeviceReady()
-        }
-    }
+        onDeviceReady?()
+      }
 
-    func bleDidDisconnect() {
-        os_log("bleDidDisconnect", log: log, type: .debug)
-        appendEntry(.deviceDisconnected, "Disconnected from \(deviceName)")
-        transitionTo(.scanning)
-    }
+    case Signal.ping:
+      send(BuzzelProtocol.createPong())
 
-    func bleDidReceiveData(_ data: Data) {
-        handleIncoming(data)
-    }
+    case Signal.pong:
+      lastPongTime = Date()
 
-    // MARK: - TcpClientDelegate
+    case Signal.ack:
+      if let seq = BuzzelProtocol.parseAckSeq(payload), seq == pendingAckSeq {
+        os_log("Ack received for seq=%d", log: log, type: .debug, seq)
+        pendingAckSeq = nil
+        retryPayload = nil
+        cancelRetry()
+      }
 
-    func tcpDidConnect() {
-        appendEntry(.deviceConnected, "Connected via TCP")
-        transitionTo(.active)
-        sendReady()
-        notifyDeviceReady()
-    }
+    case Signal.goodbye:
+      appendEntry(.deviceDisconnected, "\(deviceName) said goodbye", direction: .incoming)
+      handleDisconnect()
 
-    func tcpDidDisconnect() {
-        appendEntry(.deviceDisconnected, "TCP disconnected")
-        if !ble.isConnected {
-            transitionTo(.scanning)
-        }
-    }
+    case Signal.unpair:
+      appendEntry(.deviceDisconnected, "\(deviceName) unpaired", direction: .incoming)
+      transitionTo(.idle)
 
-    func tcpDidReceiveData(_ data: Data) {
-        handleIncoming(data)
+    case Signal.command:
+      if let cmd = BuzzelProtocol.parseCommand(payload) {
+        send(BuzzelProtocol.createAck(seq: cmd.seq))
+        handleCommand(cmd)
+      }
+
+    default:
+      os_log("Unknown signal 0x%02x", log: log, type: .error, signalId)
     }
+  }
+
+  private func handleCommand(_ cmd: BuzzelProtocol.Command) {
+    os_log("Command 0x%02x seq=%d", log: log, type: .debug, cmd.cmd, cmd.seq)
+    // All command IDs reserved — dispatch as features are added
+  }
+
+  // MARK: - Transport Delegate Helpers
+
+  private func transportDidConnect(_ transport: Transport) {
+    let label = transport == .ble ? "BLE" : "WiFi"
+    os_log("%{public}@ connected", log: log, type: .info, label)
+    appendEntry(.deviceConnected, "Connected to \(deviceName) via \(label)")
+    currentTransport = transport
+    transitionTo(.handshaking)
+    if pairingSessionId == nil { send(BuzzelProtocol.createReady()) }
+  }
+
+  private func transportDidDisconnect(_ transport: Transport) {
+    let label = transport == .ble ? "BLE" : "WiFi"
+    os_log("%{public}@ disconnected", log: log, type: .info, label)
+    appendEntry(.deviceDisconnected, "\(label) disconnected from \(deviceName)")
+    if connectionState == .active && currentTransport == transport { handleDisconnect() }
+  }
+
+  private func transportDidReceiveData(_ data: Data, via transport: Transport) {
+    os_log(
+      "Received %d bytes via %{public}@", log: log, type: .debug, data.count, transport.rawValue)
+    handleIncoming(data)
+  }
+
+  // MARK: - BleCentralDelegate
+
+  func bleDidConnect() { transportDidConnect(.ble) }
+  func bleDidDisconnect() { transportDidDisconnect(.ble) }
+  func bleDidReceiveData(_ data: Data) { transportDidReceiveData(data, via: .ble) }
+
+  // MARK: - TcpServerDelegate
+
+  func tcpServerDidAcceptClient() { transportDidConnect(.wifi) }
+  func tcpServerDidDisconnect() { transportDidDisconnect(.wifi) }
+  func tcpServerDidReceiveData(_ data: Data) { transportDidReceiveData(data, via: .wifi) }
 }

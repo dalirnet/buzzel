@@ -3,17 +3,23 @@ package com.buzzel
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.util.Log
 import com.buzzel.config.ConfigStore
 import com.buzzel.model.LogEntry
+import com.buzzel.service.BuzzelService
 
 class BuzzelApp : Application() {
+    companion object {
+        private const val TAG = "BuzzelApp"
+        const val CHANNEL_ID = "buzzel_service"
+    }
 
     lateinit var configStore: ConfigStore
         private set
 
-    /** Observable connection state — set by BuzzelService, read by MainActivity */
     var isDeviceConnected: Boolean = false
         set(value) {
+            Log.i(TAG, "Connection state: $value")
             field = value
             connectionListeners.forEach { it(value) }
         }
@@ -28,22 +34,27 @@ class BuzzelApp : Application() {
         connectionListeners.remove(listener)
     }
 
-    /** Config change listeners — notified when config_sync arrives */
-    private val configListeners = mutableListOf<() -> Unit>()
+    var hasBeenConnected: Boolean = false
 
-    fun addConfigListener(listener: () -> Unit) {
-        configListeners.add(listener)
+    var connectedDeviceName: String? = null
+
+    var serviceConnectionState: BuzzelService.ConnectionState = BuzzelService.ConnectionState.IDLE
+        set(value) {
+            Log.i(TAG, "Service connection state: $value")
+            field = value
+            serviceConnectionStateListeners.forEach { it(value) }
+        }
+
+    private val serviceConnectionStateListeners = mutableListOf<(BuzzelService.ConnectionState) -> Unit>()
+
+    fun addServiceConnectionStateListener(listener: (BuzzelService.ConnectionState) -> Unit) {
+        serviceConnectionStateListeners.add(listener)
     }
 
-    fun removeConfigListener(listener: () -> Unit) {
-        configListeners.remove(listener)
+    fun removeServiceConnectionStateListener(listener: (BuzzelService.ConnectionState) -> Unit) {
+        serviceConnectionStateListeners.remove(listener)
     }
 
-    fun notifyConfigChanged() {
-        configListeners.forEach { it() }
-    }
-
-    /** Structured activity log — visible in UI */
     private val logEntryList = mutableListOf<LogEntry>()
     private val logEntryListeners = mutableListOf<(LogEntry) -> Unit>()
     private val maxLogEntries = 200
@@ -70,24 +81,22 @@ class BuzzelApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "Application created")
         configStore = ConfigStore(this)
         createNotificationChannel()
     }
 
     private fun createNotificationChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            getString(R.string.notification_channel_name),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = "Buzzel background service"
-            setShowBadge(false)
-        }
+        val channel =
+            NotificationChannel(
+                CHANNEL_ID,
+                getString(R.string.notification_channel_name),
+                NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = "Buzzel background service"
+                setShowBadge(false)
+            }
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(channel)
-    }
-
-    companion object {
-        const val CHANNEL_ID = "buzzel_service"
     }
 }

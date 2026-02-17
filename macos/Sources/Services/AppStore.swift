@@ -1,81 +1,40 @@
-import Foundation
 import Combine
+import Foundation
+import os.log
+
+private let log = OSLog(subsystem: "com.buzzel", category: "AppStore")
 
 class AppStore: ObservableObject {
 
-    static let shared = AppStore()
+  static let shared = AppStore()
 
-    @Published var pairedDevice: DeviceInfo?
-    @Published var filters: [FilterRule] = []
-    @Published var transportMethod: String = "auto"
-    @Published var wifiHost: String = ""
-    @Published var wifiPort: Int = 9876
-    @Published var launchAtLogin: Bool = false
+  @Published var pairedDevice: DeviceInfo?
+  @Published var transportMethod: String = "wifi"
+  @Published var launchAtLogin: Bool = false
 
-    private let defaults = UserDefaults.standard
+  private let defaults = UserDefaults.standard
 
-    init() {
-        load()
+  init() { load() }
+
+  func load() {
+    if let data = defaults.data(forKey: "pairedDevice"),
+      let device = try? JSONDecoder().decode(DeviceInfo.self, from: data)
+    {
+      pairedDevice = device
     }
+    transportMethod = defaults.string(forKey: "transportMethod") ?? "wifi"
+    launchAtLogin = defaults.bool(forKey: "launchAtLogin")
+    os_log("Config loaded: transport=%{public}@", log: log, type: .debug, transportMethod)
+  }
 
-    func load() {
-        // Paired device
-        if let data = defaults.data(forKey: "pairedDevice"),
-           let device = try? JSONDecoder().decode(DeviceInfo.self, from: data) {
-            pairedDevice = device
-        }
-
-        // Filters
-        if let data = defaults.data(forKey: "filters"),
-           let decoded = try? JSONDecoder().decode([FilterRule].self, from: data) {
-            filters = decoded
-        }
-
-        transportMethod = defaults.string(forKey: "transportMethod") ?? "auto"
-        wifiHost = defaults.string(forKey: "wifiHost") ?? ""
-        wifiPort = defaults.integer(forKey: "wifiPort").nonZero ?? 9876
-        launchAtLogin = defaults.bool(forKey: "launchAtLogin")
+  func save() {
+    os_log("Config saved", log: log, type: .debug)
+    if let device = pairedDevice, let data = try? JSONEncoder().encode(device) {
+      defaults.set(data, forKey: "pairedDevice")
+    } else {
+      defaults.removeObject(forKey: "pairedDevice")
     }
-
-    func save() {
-        if let device = pairedDevice, let data = try? JSONEncoder().encode(device) {
-            defaults.set(data, forKey: "pairedDevice")
-        } else {
-            defaults.removeObject(forKey: "pairedDevice")
-        }
-
-        if let data = try? JSONEncoder().encode(filters) {
-            defaults.set(data, forKey: "filters")
-        }
-
-        defaults.set(transportMethod, forKey: "transportMethod")
-        defaults.set(wifiHost, forKey: "wifiHost")
-        defaults.set(wifiPort, forKey: "wifiPort")
-        defaults.set(launchAtLogin, forKey: "launchAtLogin")
-    }
-
-    func addFilter(_ filter: FilterRule) {
-        filters.append(filter)
-        save()
-    }
-
-    func removeFilter(at index: Int) {
-        guard filters.indices.contains(index) else { return }
-        filters.remove(at: index)
-        save()
-    }
-
-    func addPreset(_ preset: FilterPreset) {
-        filters.append(contentsOf: preset.filters)
-        save()
-    }
-
-    func unpair() {
-        pairedDevice = nil
-        save()
-    }
-}
-
-private extension Int {
-    var nonZero: Int? { self == 0 ? nil : self }
+    defaults.set(transportMethod, forKey: "transportMethod")
+    defaults.set(launchAtLogin, forKey: "launchAtLogin")
+  }
 }

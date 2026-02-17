@@ -5,29 +5,22 @@ import java.util.Date
 import java.util.Locale
 
 enum class LogEventType {
-    SMS_RECEIVED,
-    SMS_FORWARDED,
-    SMS_QUEUED,
-    SMS_FILTERED,
-    QUEUE_FLUSHED,
     DEVICE_CONNECTED,
     DEVICE_DISCONNECTED,
     PAIRING_STARTED,
     PAIRING_COMPLETE,
     PAIRING_FAILED,
-    FILTER_UPDATED,
-    CONFIG_SYNCED
 }
 
 enum class LogDirection {
     INCOMING,
     OUTGOING,
-    LOCAL
+    LOCAL,
 }
 
 enum class LogStatus {
     SUCCESS,
-    FAILED
+    FAILED,
 }
 
 data class LogEntry(
@@ -36,7 +29,7 @@ data class LogEntry(
     val message: String,
     val direction: LogDirection = LogDirection.LOCAL,
     val status: LogStatus = LogStatus.SUCCESS,
-    val error: String? = null
+    val error: String? = null,
 ) {
     val timeString: String
         get() = TIME_FORMAT.format(Date(timestamp))
