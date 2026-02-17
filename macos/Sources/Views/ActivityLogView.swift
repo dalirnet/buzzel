@@ -4,104 +4,73 @@ struct ActivityLogView: View {
     @ObservedObject var transportManager: TransportManager
 
     var body: some View {
-        ViewLayout {
-            HeaderTitle(icon: "text.bubble", title: "Activity")
-        } headerRight: {
-            if !transportManager.logEntries.isEmpty {
-                Button {
-                    transportManager.logEntries.removeAll()
-                } label: {
-                    Text("Clear")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-            }
-        } content: {
-            if transportManager.logEntries.isEmpty {
+        if transportManager.logEntries.isEmpty {
+            VStack {
+                Spacer()
                 Text("No activity yet")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 8) {
-                            ForEach(transportManager.logEntries) { entry in
-                                LogEntryRow(entry: entry)
-                                    .id(entry.id)
-                            }
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
-                    }
-                    .onChange(of: transportManager.logEntries.count) { _ in
-                        if let last = transportManager.logEntries.last {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                proxy.scrollTo(last.id, anchor: .bottom)
-                            }
+                    .font(.system(size: 13))
+                    .foregroundColor(DesignColor.secondary)
+                Spacer()
+            }
+        } else {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(transportManager.logEntries.reversed()) { entry in
+                        ActivityLogRow(entry: entry)
+
+                        if entry.id != transportManager.logEntries.first?.id {
+                            Divider()
+                                .padding(.leading, 28)
                         }
                     }
                 }
+                .padding(.vertical, 4)
             }
         }
     }
 }
 
-struct LogEntryRow: View {
+// MARK: - Log Row
+
+private struct ActivityLogRow: View {
     let entry: LogEntry
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                directionIcon
-                    .font(.system(size: 10))
-                    .frame(width: 16, height: 16)
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(entry.status == .success ? DesignColor.green : DesignColor.red)
+                .frame(width: 8, height: 8)
+                .padding(.top, 5)
 
+            VStack(alignment: .leading, spacing: 2) {
                 Text(entry.message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(entry.status == .failed ? .red : .primary)
+                    .font(.system(size: 13))
+                    .foregroundColor(DesignColor.text)
                     .lineLimit(2)
 
-                Spacer()
-
-                if entry.status == .failed {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.red)
+                if let error = entry.error {
+                    Text(error)
+                        .font(.system(size: 11))
+                        .foregroundColor(DesignColor.red)
+                        .lineLimit(1)
                 }
+            }
 
+            Spacer()
+
+            VStack(alignment: .trailing, spacing: 2) {
                 Text(entry.timeString)
                     .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-            }
+                    .foregroundColor(DesignColor.secondary)
 
-            if let error = entry.error {
-                Text(error)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.red.opacity(0.8))
-                    .padding(.leading, 22)
+                if entry.direction != .local {
+                    Text(entry.direction == .incoming ? "IN" : "OUT")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(DesignColor.secondary)
+                }
             }
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .background(entry.status == .failed ? Color.red.opacity(0.06) : Color.primary.opacity(0.04))
-        .cornerRadius(8)
-    }
-
-    @ViewBuilder
-    private var directionIcon: some View {
-        switch entry.direction {
-        case .incoming:
-            Image(systemName: "arrow.down.left")
-                .foregroundStyle(.blue)
-        case .outgoing:
-            Image(systemName: "arrow.up.right")
-                .foregroundStyle(.green)
-        case .local:
-            Image(systemName: "circle.fill")
-                .font(.system(size: 5))
-                .foregroundStyle(.secondary)
-        }
     }
 }

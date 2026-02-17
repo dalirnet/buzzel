@@ -1,129 +1,164 @@
 import Foundation
+import CommonCrypto
+import os.log
 
-enum MessageType {
-    static let sms = "sms"
-    static let configSync = "config_sync"
-    static let configAck = "config_ack"
-    static let ready = "ready"
-    static let goodbye = "goodbye"
-    static let ping = "ping"
-    static let pong = "pong"
-    static let queueFlush = "queue_flush"
-    static let status = "status"
-    static let pairingRequest = "pairing_request"
-    static let pairingResponse = "pairing_response"
-    static let unpair = "unpair"
+private let log = OSLog(subsystem: "com.buzzel", category: "Protocol")
+
+// MARK: - Signal IDs
+
+enum Signal {
+    static let command: UInt8      = 0x00
+    static let pairRequest: UInt8  = 0x01
+    static let pairResponse: UInt8 = 0x02
+    static let ready: UInt8        = 0x03
+    static let ping: UInt8         = 0x04
+    static let pong: UInt8         = 0x05
+    static let ack: UInt8          = 0x06
+    static let goodbye: UInt8      = 0x07
+    static let unpair: UInt8       = 0x08
 }
 
-struct SmsPayload {
-    let sender: String
-    let contactName: String?
-    let body: String
-    let receivedAt: Int64
-}
+// MARK: - BLE UUIDs
 
 enum BleUuids {
-    static let service = "0000BF01-0000-1000-8000-00805F9B34FB"
-    static let configChar = "0000BF02-0000-1000-8000-00805F9B34FB"
-    static let smsChar = "0000BF03-0000-1000-8000-00805F9B34FB"
-    static let statusChar = "0000BF04-0000-1000-8000-00805F9B34FB"
+    static let service  = "0000BF01-0000-1000-8000-00805F9B34FB"
+    static let dataChar = "0000BF02-0000-1000-8000-00805F9B34FB"
 }
+
+// MARK: - Protocol
 
 enum BuzzelProtocol {
 
-    static func createMessage(type: String, payload: [String: Any]? = nil) -> Data? {
-        var dict: [String: Any] = [
-            "type": type,
-            "id": UUID().uuidString,
-            "timestamp": Int64(Date().timeIntervalSince1970 * 1000)
-        ]
-        if let payload = payload {
-            dict["payload"] = payload
+    static let tcpPort: UInt16 = 48155
+    static let maxFrame = 256
+    static let frameHeader = 2
+    static let maxPayload = maxFrame - frameHeader  // 254
+    static let commandHeader = 3  // cmd(1) + seq(2)
+    static let maxTlvData = maxPayload - 1 - commandHeader  // 250
+
+    // MARK: QR
+
+    static let qrSize = 24
+    private static let qrMagic: UInt16 = 0xBC1B
+
+    struct QrPayload {
+        let seed: Data
+        let host: String
+        let prefer: String
+    }
+
+    static func generateQrPayload(seed: Data, host: String, prefer: String) -> Data {
+        var buf = Data(capacity: qrSize)
+        var magic = qrMagic.bigEndian
+        buf.append(Data(bytes: &magic, count: 2))
+        buf.append(seed)
+        // IPv4 host to 4 bytes
+        let parts = host.split(separator: ".").compactMap { UInt8($0) }
+        if parts.count == 4 {
+            buf.append(contentsOf: parts)
+        } else {
+            buf.append(contentsOf: [0, 0, 0, 0])
         }
-        return try? JSONSerialization.data(withJSONObject: dict)
+        buf.append(prefer == "ble" ? 0x01 : 0x00)
+        buf.append(0x00) // reserved
+        return buf
     }
 
-    static func createReady() -> Data? {
-        createMessage(type: MessageType.ready)
+    static func deriveSessionId(_ seed: Data) -> String {
+        let hash = sha256(seed)
+        let uuid = NSUUID(uuidBytes: [UInt8](hash.prefix(16)))
+        return uuid.uuidString
     }
 
-    static func createGoodbye() -> Data? {
-        createMessage(type: MessageType.goodbye)
+    static func derivePairingCode(_ seed: Data) -> String {
+        var input = seed
+        input.append("code".data(using: .utf8)!)
+        let hash = sha256(input)
+        let num = UInt32(hash[0]) << 24 | UInt32(hash[1]) << 16 | UInt32(hash[2]) << 8 | UInt32(hash[3])
+        let code = num % 1_000_000
+        return String(format: "%06d", code)
     }
 
-    static func createPong() -> Data? {
-        createMessage(type: MessageType.pong)
+    private static func sha256(_ data: Data) -> Data {
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        _ = data.withUnsafeBytes { CC_SHA256($0.baseAddress, CC_LONG(data.count), &hash) }
+        return Data(hash)
     }
 
-    static func createUnpair() -> Data? {
-        createMessage(type: MessageType.unpair)
+    // MARK: Signals
+
+    static func createPing() -> Data { Data([Signal.ping]) }
+    static func createPong() -> Data { Data([Signal.pong]) }
+    static func createReady() -> Data { Data([Signal.ready]) }
+    static func createGoodbye() -> Data { Data([Signal.goodbye]) }
+    static func createUnpair() -> Data { Data([Signal.unpair]) }
+
+    static func createPairRequest(code: String) -> Data {
+        var buf = Data(capacity: 7)
+        buf.append(Signal.pairRequest)
+        let codeBytes = Array(code.utf8.prefix(6))
+        buf.append(contentsOf: codeBytes)
+        while buf.count < 7 { buf.append(0x30) } // pad with '0'
+        return buf
     }
 
-    static func createConfigSync(transport: String, wifiHost: String?, wifiPort: Int, filters: [FilterRule]) -> Data? {
-        let filterDicts: [[String: Any]] = filters.map { f in
-            [
-                "id": f.id,
-                "enabled": f.enabled,
-                "type": f.type.rawValue,
-                "value": f.value
-            ]
-        }
-        var payload: [String: Any] = [
-            "transport": transport,
-            "wifiPort": wifiPort,
-            "filters": filterDicts
-        ]
-        if let host = wifiHost {
-            payload["wifiHost"] = host
-        }
-        return createMessage(type: MessageType.configSync, payload: payload)
+    static func createPairResponse(accepted: Bool, reason: UInt8 = 0x00) -> Data {
+        Data([Signal.pairResponse, accepted ? 0x01 : 0x00, reason])
     }
 
-    static func createPairingRequest(code: String) -> Data? {
-        createMessage(type: MessageType.pairingRequest, payload: ["code": code])
+    static func createAck(seq: UInt16) -> Data {
+        var buf = Data(capacity: 3)
+        buf.append(Signal.ack)
+        buf.append(UInt8(seq >> 8))
+        buf.append(UInt8(seq & 0xFF))
+        return buf
     }
 
-    static func parseType(_ data: Data) -> String? {
-        guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return dict["type"] as? String
+    static func parseSignalId(_ payload: Data) -> UInt8? {
+        guard !payload.isEmpty else { return nil }
+        return payload[0]
     }
 
-    static func parseSms(_ data: Data) -> SmsPayload? {
-        guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let payload = dict["payload"] as? [String: Any],
-              let sender = payload["sender"] as? String,
-              let body = payload["body"] as? String
-        else { return nil }
-
-        let receivedAt = (payload["receivedAt"] as? NSNumber)?.int64Value ?? 0
-
-        return SmsPayload(
-            sender: sender,
-            contactName: payload["contactName"] as? String,
-            body: body,
-            receivedAt: receivedAt
-        )
+    static func parsePairRequestCode(_ payload: Data) -> String? {
+        guard payload.count >= 7, payload[0] == Signal.pairRequest else { return nil }
+        return String(data: payload.subdata(in: 1..<7), encoding: .ascii)
     }
 
-    static func parseQueueFlush(_ data: Data) -> [SmsPayload] {
-        guard let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let payload = dict["payload"] as? [String: Any],
-              let messages = payload["messages"] as? [[String: Any]]
-        else { return [] }
-
-        return messages.compactMap { msg in
-            guard let sender = msg["sender"] as? String,
-                  let body = msg["body"] as? String
-            else { return nil }
-
-            let receivedAt = (msg["receivedAt"] as? NSNumber)?.int64Value ?? 0
-
-            return SmsPayload(
-                sender: sender,
-                contactName: msg["contactName"] as? String,
-                body: body,
-                receivedAt: receivedAt
-            )
-        }
+    static func parsePairResponse(_ payload: Data) -> (accepted: Bool, reason: UInt8)? {
+        guard payload.count >= 3, payload[0] == Signal.pairResponse else { return nil }
+        return (payload[1] == 0x01, payload[2])
     }
+
+    static func parseAckSeq(_ payload: Data) -> UInt16? {
+        guard payload.count >= 3, payload[0] == Signal.ack else { return nil }
+        return UInt16(payload[1]) << 8 | UInt16(payload[2])
+    }
+
+    // MARK: Commands
+
+    struct Command {
+        let cmd: UInt8
+        let seq: UInt16
+        let data: Data
+    }
+
+    static func createCommand(cmd: UInt8, seq: UInt16, tlvData: Data = Data()) -> Data {
+        let dataLen = min(tlvData.count, maxTlvData)
+        var buf = Data(capacity: 1 + commandHeader + dataLen)
+        buf.append(Signal.command)
+        buf.append(cmd)
+        buf.append(UInt8(seq >> 8))
+        buf.append(UInt8(seq & 0xFF))
+        if dataLen > 0 { buf.append(tlvData.prefix(dataLen)) }
+        return buf
+    }
+
+    static func parseCommand(_ payload: Data) -> Command? {
+        guard payload.count >= 4, payload[0] == Signal.command else { return nil }
+        let cmd = payload[1]
+        let seq = UInt16(payload[2]) << 8 | UInt16(payload[3])
+        let data = payload.count > 4 ? payload.subdata(in: 4..<payload.count) : Data()
+        return Command(cmd: cmd, seq: seq, data: data)
+    }
+
 }

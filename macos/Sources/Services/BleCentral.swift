@@ -12,18 +12,16 @@ protocol BleCentralDelegate: AnyObject {
 
 class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
-    private static let maxFrameSize = 1_000_000
     private static let reconnectDelay: TimeInterval = 2
 
     weak var delegate: BleCentralDelegate?
 
     @Published var discoveredDevices: [DiscoveredDevice] = []
+    @Published var bluetoothAuthorization: CBManagerAuthorization = CBCentralManager.authorization
 
     private var centralManager: CBCentralManager?
     private var peripheral: CBPeripheral?
-    private var configCharacteristic: CBCharacteristic?
-    private var smsCharacteristic: CBCharacteristic?
-    private var statusCharacteristic: CBCharacteristic?
+    private var dataCharacteristic: CBCharacteristic?
     private var isDiscoveryMode = false
 
     // Reassembly buffer for length-prefixed frames
@@ -32,15 +30,11 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     // Write queue — BLE only allows one outstanding write at a time
     private var writeQueue: [Data] = []
     private var isWriting = false
-    private var pendingNotifyCount = 0
 
     private let serviceUUID = CBUUID(string: BleUuids.service)
-    private let configUUID = CBUUID(string: BleUuids.configChar)
-    private let smsUUID = CBUUID(string: BleUuids.smsChar)
-    private let statusUUID = CBUUID(string: BleUuids.statusChar)
+    private let dataUUID = CBUUID(string: BleUuids.dataChar)
 
     var isConnected: Bool { peripheral?.state == .connected }
-    var peripheralName: String? { peripheral?.name }
     var peripheralIdentifier: UUID? { peripheral?.identifier }
 
     // MARK: - Public API
@@ -61,9 +55,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
         if let p = peripheral {
             centralManager?.cancelPeripheralConnection(p)
             peripheral = nil
-            configCharacteristic = nil
-            smsCharacteristic = nil
-            statusCharacteristic = nil
+            dataCharacteristic = nil
         }
         if centralManager == nil {
             centralManager = CBCentralManager(delegate: self, queue: nil)
@@ -99,38 +91,41 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     }
 
     func disconnect() {
+        os_log("BLE disconnect requested", log: log, type: .debug)
         if let p = peripheral {
             centralManager?.cancelPeripheralConnection(p)
         }
     }
 
+    func requestAccess() {
+        if centralManager == nil {
+            centralManager = CBCentralManager(delegate: self, queue: nil)
+        }
+    }
+
     func send(_ data: Data) -> Bool {
-        guard peripheral != nil, configCharacteristic != nil else { return false }
-        // Frame: 4-byte big-endian length prefix + payload
-        var frame = Data(count: 4)
-        let length = UInt32(data.count)
-        frame[0] = UInt8((length >> 24) & 0xFF)
-        frame[1] = UInt8((length >> 16) & 0xFF)
-        frame[2] = UInt8((length >> 8) & 0xFF)
-        frame[3] = UInt8(length & 0xFF)
-        frame.append(data)
+        guard peripheral != nil, dataCharacteristic != nil else { return false }
+        let frame = FrameCodec.encode(data)
+        os_log("BLE send: %d bytes (%d frame bytes)", log: log, type: .debug, data.count, frame.count)
         writeQueue.append(frame)
         drainWriteQueue()
         return true
     }
 
     private func drainWriteQueue() {
-        guard !isWriting, let p = peripheral, let char = configCharacteristic else { return }
+        guard !isWriting, let peripheral = peripheral, let characteristic = dataCharacteristic else { return }
         guard !writeQueue.isEmpty else { return }
+        os_log("Draining write queue: %d items", log: log, type: .debug, writeQueue.count)
         let frame = writeQueue.removeFirst()
         isWriting = true
-        p.writeValue(frame, for: char, type: .withResponse)
+        peripheral.writeValue(frame, for: characteristic, type: .withResponse)
     }
 
     // MARK: - CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         os_log("centralManagerDidUpdateState: %{public}d", log: log, type: .debug, central.state.rawValue)
+        DispatchQueue.main.async { self.bluetoothAuthorization = CBCentralManager.authorization }
         if central.state == .poweredOn {
             if isDiscoveryMode {
                 central.scanForPeripherals(
@@ -194,9 +189,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
 
     private func resetConnectionState() {
         peripheral = nil
-        configCharacteristic = nil
-        smsCharacteristic = nil
-        statusCharacteristic = nil
+        dataCharacteristic = nil
         recvBuffer = Data()
         writeQueue.removeAll()
         isWriting = false
@@ -218,71 +211,41 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
             os_log("Service not found", log: log, type: .error)
             return
         }
-        peripheral.discoverCharacteristics([configUUID, smsUUID, statusUUID], for: service)
+        peripheral.discoverCharacteristics([dataUUID], for: service)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         os_log("didDiscoverCharacteristics: %{public}d", log: log, type: .debug, service.characteristics?.count ?? 0)
-        pendingNotifyCount = 0
         for char in service.characteristics ?? [] {
-            switch char.uuid {
-            case configUUID:
-                configCharacteristic = char
-            case smsUUID:
-                smsCharacteristic = char
-                pendingNotifyCount += 1
+            if char.uuid == dataUUID {
+                dataCharacteristic = char
+                // Subscribe to notifications on data char
                 peripheral.setNotifyValue(true, for: char)
-            case statusUUID:
-                statusCharacteristic = char
-                pendingNotifyCount += 1
-                peripheral.setNotifyValue(true, for: char)
-            default:
-                break
             }
-        }
-        if pendingNotifyCount == 0 {
-            delegate?.bleDidConnect()
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
-        pendingNotifyCount -= 1
-        if pendingNotifyCount <= 0 {
-            pendingNotifyCount = 0
+        os_log("Notification state for %{public}@: %{public}@", log: log, type: .debug,
+               characteristic.uuid.uuidString, error?.localizedDescription ?? "ok")
+        if characteristic.uuid == dataUUID && error == nil {
             delegate?.bleDidConnect()
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         guard let data = characteristic.value else { return }
-
-        // Append to reassembly buffer
+        os_log("BLE received %d bytes", log: log, type: .debug, data.count)
         recvBuffer.append(data)
-
-        // Process complete frames (4-byte big-endian length prefix + payload)
-        while recvBuffer.count >= 4 {
-            let length = Int(recvBuffer[0]) << 24
-                       | Int(recvBuffer[1]) << 16
-                       | Int(recvBuffer[2]) << 8
-                       | Int(recvBuffer[3])
-
-            guard length > 0, length < Self.maxFrameSize else {
-                recvBuffer = Data()
-                return
-            }
-
-            let totalNeeded = 4 + length
-            if recvBuffer.count < totalNeeded {
-                break
-            }
-
-            let payload = recvBuffer.subdata(in: 4..<totalNeeded)
-            recvBuffer = Data(recvBuffer.suffix(from: totalNeeded))
-            delegate?.bleDidReceiveData(payload)
+        FrameCodec.extractFrames(from: &recvBuffer) { [weak self] payload in
+            self?.delegate?.bleDidReceiveData(payload)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            os_log("BLE write error: %{public}@", log: log, type: .error, error.localizedDescription)
+        }
         isWriting = false
         drainWriteQueue()
     }

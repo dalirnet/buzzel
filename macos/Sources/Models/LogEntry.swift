@@ -3,18 +3,10 @@ import Foundation
 // MARK: - Log Event Type
 
 enum LogEventType: String {
-    case smsReceived
-    case smsForwarded
-    case smsQueued
-    case smsFiltered
-    case queueFlushed
     case deviceConnected
     case deviceDisconnected
-    case pairingStarted
     case pairingComplete
     case pairingFailed
-    case filterUpdated
-    case configSynced
 }
 
 // MARK: - Log Direction
