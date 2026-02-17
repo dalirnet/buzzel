@@ -1,13 +1,17 @@
 package com.buzzel.protocol
 
 import com.buzzel.transport.FrameCodec
-import org.junit.Assert.*
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
 class ProtocolTest {
-
     // Fixed seed: 0x00..0x0F
     private val seed = ByteArray(16) { it.toByte() }
 
@@ -262,7 +266,7 @@ class ProtocolTest {
     @Test
     fun tlv_roundTrip() {
         val encoded = Protocol.tlvEncode(0x01, byteArrayOf(0x0A, 0x0B, 0x0C))
-        assertEquals(5, encoded.size)  // tag(1) + len(1) + value(3)
+        assertEquals(5, encoded.size) // tag(1) + len(1) + value(3)
         val fields = Protocol.tlvDecode(encoded)
         assertEquals(1, fields.size)
         assertEquals(0x01.toByte(), fields[0].tag)
@@ -292,7 +296,8 @@ class ProtocolTest {
 
     @Test
     fun tlv_multipleFields() {
-        val buf = Protocol.tlvEncodeString(0x01, "a") +
+        val buf =
+            Protocol.tlvEncodeString(0x01, "a") +
                 Protocol.tlvEncodeInt(0x02, 99) +
                 Protocol.tlvEncodeByte(0x03, 0x07)
         val fields = Protocol.tlvDecode(buf)
@@ -321,7 +326,7 @@ class ProtocolTest {
 
     @Test
     fun frameCodec_encode() {
-        val payload = byteArrayOf(0x04)  // ping
+        val payload = byteArrayOf(0x04) // ping
         val frame = FrameCodec.encode(payload)
         assertEquals(3, frame.size)
         // 2-byte BE header
@@ -364,7 +369,7 @@ class ProtocolTest {
     @Test
     fun wireSize_ping() {
         val frame = FrameCodec.encode(Protocol.createPing())
-        assertEquals(3, frame.size)  // 2-byte header + 1-byte payload
+        assertEquals(3, frame.size) // 2-byte header + 1-byte payload
     }
 
     @Test
@@ -394,32 +399,32 @@ class ProtocolTest {
     @Test
     fun wireSize_pairRequest() {
         val frame = FrameCodec.encode(Protocol.createPairRequest("123456"))
-        assertEquals(9, frame.size)  // 2-byte header + 7-byte payload
+        assertEquals(9, frame.size) // 2-byte header + 7-byte payload
     }
 
     @Test
     fun wireSize_pairResponse() {
         val frame = FrameCodec.encode(Protocol.createPairResponse(true))
-        assertEquals(5, frame.size)  // 2-byte header + 3-byte payload
+        assertEquals(5, frame.size) // 2-byte header + 3-byte payload
     }
 
     @Test
     fun wireSize_ack() {
         val frame = FrameCodec.encode(Protocol.createAck(1))
-        assertEquals(5, frame.size)  // 2-byte header + 3-byte payload
+        assertEquals(5, frame.size) // 2-byte header + 3-byte payload
     }
 
     @Test
     fun wireSize_commandEmpty() {
         val frame = FrameCodec.encode(Protocol.createCommand(0x01, 0))
-        assertEquals(6, frame.size)  // 2-byte header + 4-byte payload (signal + cmd + seq*2)
+        assertEquals(6, frame.size) // 2-byte header + 4-byte payload (signal + cmd + seq*2)
     }
 
     @Test
     fun wireSize_commandMaxTlv() {
         val tlv = ByteArray(Protocol.MAX_TLV_DATA)
         val frame = FrameCodec.encode(Protocol.createCommand(0x01, 0, tlv))
-        assertEquals(Protocol.MAX_FRAME, frame.size)  // exactly 256 bytes
+        assertEquals(Protocol.MAX_FRAME, frame.size) // exactly 256 bytes
     }
 
     // --- Big-Endian Byte-Level Verification ---
@@ -428,8 +433,8 @@ class ProtocolTest {
     fun bigEndian_ackSeq_0x0100() {
         val payload = Protocol.createAck(0x0100)
         assertEquals(Signal.ACK, payload[0])
-        assertEquals(0x01.toByte(), payload[1])  // high byte
-        assertEquals(0x00.toByte(), payload[2])  // low byte
+        assertEquals(0x01.toByte(), payload[1]) // high byte
+        assertEquals(0x00.toByte(), payload[2]) // low byte
     }
 
     @Test
@@ -450,29 +455,29 @@ class ProtocolTest {
     fun bigEndian_commandSeq() {
         val payload = Protocol.createCommand(0x30, 0x0102)
         assertEquals(Signal.COMMAND, payload[0])
-        assertEquals(0x30.toByte(), payload[1])  // cmd
-        assertEquals(0x01.toByte(), payload[2])  // seq high
-        assertEquals(0x02.toByte(), payload[3])  // seq low
+        assertEquals(0x30.toByte(), payload[1]) // cmd
+        assertEquals(0x01.toByte(), payload[2]) // seq high
+        assertEquals(0x02.toByte(), payload[3]) // seq low
     }
 
     @Test
     fun bigEndian_tlvInt() {
         val encoded = Protocol.tlvEncodeInt(0x01, 0x01020304)
         // tag=0x01, len=4, value=01 02 03 04
-        assertEquals(0x01.toByte(), encoded[0])  // tag
-        assertEquals(0x04.toByte(), encoded[1])  // len
-        assertEquals(0x01.toByte(), encoded[2])  // int byte 0 (MSB)
-        assertEquals(0x02.toByte(), encoded[3])  // int byte 1
-        assertEquals(0x03.toByte(), encoded[4])  // int byte 2
-        assertEquals(0x04.toByte(), encoded[5])  // int byte 3 (LSB)
+        assertEquals(0x01.toByte(), encoded[0]) // tag
+        assertEquals(0x04.toByte(), encoded[1]) // len
+        assertEquals(0x01.toByte(), encoded[2]) // int byte 0 (MSB)
+        assertEquals(0x02.toByte(), encoded[3]) // int byte 1
+        assertEquals(0x03.toByte(), encoded[4]) // int byte 2
+        assertEquals(0x04.toByte(), encoded[5]) // int byte 3 (LSB)
     }
 
     @Test
     fun bigEndian_frameHeader() {
         val payload = ByteArray(200) { 0x00 }
         val frame = FrameCodec.encode(payload)
-        assertEquals(0x00.toByte(), frame[0])    // high byte
-        assertEquals(200.toByte(), frame[1])     // low byte = 0xC8
+        assertEquals(0x00.toByte(), frame[0]) // high byte
+        assertEquals(200.toByte(), frame[1]) // low byte = 0xC8
     }
 
     // --- TLV 248-Byte Limit ---
@@ -481,7 +486,7 @@ class ProtocolTest {
     fun tlv_maxValueSize() {
         val value = ByteArray(248) { it.toByte() }
         val encoded = Protocol.tlvEncode(0x01, value)
-        assertEquals(250, encoded.size)  // tag(1) + len(1) + value(248)
+        assertEquals(250, encoded.size) // tag(1) + len(1) + value(248)
         val fields = Protocol.tlvDecode(encoded)
         assertEquals(1, fields.size)
         assertEquals(248, fields[0].value.size)
@@ -491,7 +496,7 @@ class ProtocolTest {
     fun tlv_oversizedValueTruncated() {
         val value = ByteArray(300) { it.toByte() }
         val encoded = Protocol.tlvEncode(0x01, value)
-        assertEquals(250, encoded.size)  // tag(1) + len(1) + capped at 248
+        assertEquals(250, encoded.size) // tag(1) + len(1) + capped at 248
         val fields = Protocol.tlvDecode(encoded)
         assertEquals(248, fields[0].value.size)
     }
@@ -499,7 +504,7 @@ class ProtocolTest {
     @Test
     fun tlv_zeroLengthValue() {
         val encoded = Protocol.tlvEncode(0x01, ByteArray(0))
-        assertEquals(2, encoded.size)  // tag(1) + len(1)
+        assertEquals(2, encoded.size) // tag(1) + len(1)
         val fields = Protocol.tlvDecode(encoded)
         assertEquals(1, fields.size)
         assertEquals(0, fields[0].value.size)
@@ -572,7 +577,7 @@ class ProtocolTest {
         // tag=0x01, len=5, but only 2 bytes of value follow
         val truncated = byteArrayOf(0x01, 0x05, 0xAA.toByte(), 0xBB.toByte())
         val fields = Protocol.tlvDecode(truncated)
-        assertEquals(0, fields.size)  // should skip truncated field
+        assertEquals(0, fields.size) // should skip truncated field
     }
 
     @Test
@@ -588,7 +593,7 @@ class ProtocolTest {
         // Second field truncated: tag=0x02, len=3, but only 1 byte
         val data = byteArrayOf(0x01, 0x01, 0xAA.toByte(), 0x02, 0x03, 0xBB.toByte())
         val fields = Protocol.tlvDecode(data)
-        assertEquals(1, fields.size)  // only first field should parse
+        assertEquals(1, fields.size) // only first field should parse
         assertEquals(0x01.toByte(), fields[0].tag)
     }
 
@@ -655,19 +660,19 @@ class ProtocolTest {
     fun frameCodec_oversizedPayloadTruncated() {
         val payload = ByteArray(300) { it.toByte() }
         val frame = FrameCodec.encode(payload)
-        assertEquals(FrameCodec.MAX_PAYLOAD + 2, frame.size)  // capped at 254 + 2
+        assertEquals(FrameCodec.MAX_PAYLOAD + 2, frame.size) // capped at 254 + 2
     }
 
     @Test
     fun frameCodec_extractFrames_partialFrame() {
         // Complete frame (ping) + partial frame header
         val ping = FrameCodec.encode(Protocol.createPing())
-        val partial = ping + byteArrayOf(0x00, 0x05)  // header says 5 bytes but no payload
+        val partial = ping + byteArrayOf(0x00, 0x05) // header says 5 bytes but no payload
         val frames = mutableListOf<ByteArray>()
         val remaining = FrameCodec.extractFrames(partial) { frames.add(it) }
         assertEquals(1, frames.size)
         assertEquals(Signal.PING, frames[0][0])
-        assertEquals(2, remaining.size)  // the partial header remains
+        assertEquals(2, remaining.size) // the partial header remains
     }
 
     @Test
@@ -693,7 +698,7 @@ class ProtocolTest {
         val frames = mutableListOf<ByteArray>()
         val remaining = FrameCodec.extractFrames(byteArrayOf(0x00, 0x00, 0x04)) { frames.add(it) }
         assertEquals(0, frames.size)
-        assertEquals(0, remaining.size)  // buffer reset on invalid
+        assertEquals(0, remaining.size) // buffer reset on invalid
     }
 
     @Test
@@ -729,13 +734,17 @@ class ProtocolTest {
 
     // --- Helpers ---
 
-    private fun buildQr(seed: ByteArray, host: String, prefer: String): ByteArray {
+    private fun buildQr(
+        seed: ByteArray,
+        host: String,
+        prefer: String,
+    ): ByteArray {
         val buf = ByteBuffer.allocate(24).order(ByteOrder.BIG_ENDIAN)
         buf.putShort(0xBC1B.toShort())
         buf.put(seed)
         host.split(".").forEach { buf.put(it.toInt().toByte()) }
         buf.put(if (prefer == "ble") 0x01 else 0x00)
-        buf.put(0x00)  // reserved
+        buf.put(0x00) // reserved
         return buf.array()
     }
 }
