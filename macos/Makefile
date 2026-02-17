@@ -2,9 +2,9 @@
 init:
 	sh init.sh
 
-.PHONY: icon
-icon:
-	sh icon.sh
+.PHONY: format
+format:
+	sh format.sh
 
 .PHONY: build
 build:

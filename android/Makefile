@@ -2,6 +2,10 @@
 init:
 	sh init.sh
 
+.PHONY: format
+format:
+	sh format.sh
+
 .PHONY: build
 build:
 	sh build.sh
