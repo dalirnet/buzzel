@@ -20,6 +20,10 @@ run: build
 	adb install -r $$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
 	adb shell am start -n com.buzzel/.ui.MainActivity
 
+.PHONY: test
+test:
+	./gradlew testDebugUnitTest
+
 .PHONY: clean
 clean:
 	./gradlew clean

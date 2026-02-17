@@ -5,18 +5,11 @@ import java.util.Date
 import java.util.Locale
 
 enum class LogEventType {
-    SMS_RECEIVED,
-    SMS_FORWARDED,
-    SMS_QUEUED,
-    SMS_FILTERED,
-    QUEUE_FLUSHED,
     DEVICE_CONNECTED,
     DEVICE_DISCONNECTED,
     PAIRING_STARTED,
     PAIRING_COMPLETE,
-    PAIRING_FAILED,
-    FILTER_UPDATED,
-    CONFIG_SYNCED
+    PAIRING_FAILED
 }
 
 enum class LogDirection {

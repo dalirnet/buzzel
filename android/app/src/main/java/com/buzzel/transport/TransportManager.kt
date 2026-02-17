@@ -2,143 +2,130 @@ package com.buzzel.transport
 
 import android.content.Context
 import android.util.Log
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
-/**
- * Unified transport interface over BLE and TCP.
- * Handles routing messages through the active transport(s).
- */
 class TransportManager(
     context: Context,
-    private val onMessageReceived: (String) -> Unit,
+    private val onMessageReceived: (ByteArray) -> Unit,
     private val onConnectionChanged: (Boolean) -> Unit
 ) {
     companion object {
         private const val TAG = "TransportManager"
     }
 
+    enum class ActiveTransport { NONE, BLE, WIFI }
+
     private val bleServer: BleGattServer
-    private val tcpServer: TcpServer
+    private var tcpClient: TcpClient? = null
     private val sendExecutor = Executors.newSingleThreadExecutor()
+
+    var activeTransport: ActiveTransport = ActiveTransport.NONE
+        private set
 
     init {
         bleServer = BleGattServer(
             context = context,
-            onMessageReceived = { handleIncoming(it) },
+            onMessageReceived = { onMessageReceived(it) },
             onConnectionChanged = { connected ->
-                Log.d(TAG, "BLE connection: $connected")
-                onConnectionChanged(isConnected)
-            }
-        )
-
-        tcpServer = TcpServer(
-            onMessageReceived = { handleIncoming(it) },
-            onConnectionChanged = { connected ->
-                Log.d(TAG, "TCP connection: $connected")
-                onConnectionChanged(isConnected)
+                if (connected) activeTransport = ActiveTransport.BLE
+                else if (activeTransport == ActiveTransport.BLE) activeTransport = ActiveTransport.NONE
+                onConnectionChanged(connected)
             }
         )
     }
 
     val isConnected: Boolean
-        get() = bleServer.isConnected || tcpServer.isConnected
+        get() = when (activeTransport) {
+            ActiveTransport.BLE -> bleServer.isConnected
+            ActiveTransport.WIFI -> tcpClient?.isConnected == true
+            ActiveTransport.NONE -> false
+        }
 
-    /** Start BLE server (always on, even in idle mode for discoverability) */
     fun startBle() {
+        Log.i(TAG, "Starting BLE transport")
         bleServer.start()
     }
 
-    /** Start TCP server (only in active mode) */
-    fun startTcp(port: Int = 9876) {
-        tcpServer.stop()
-        tcpServer.port = port
-        tcpServer.start()
+    fun startWifiClient(host: String, port: Int) {
+        Log.i(TAG, "Starting WiFi transport: $host:$port")
+        stopWifiClient()
+        val client = TcpClient(
+            onMessageReceived = { onMessageReceived(it) },
+            onConnectionChanged = { connected ->
+                if (connected) activeTransport = ActiveTransport.WIFI
+                else if (activeTransport == ActiveTransport.WIFI) activeTransport = ActiveTransport.NONE
+                onConnectionChanged(connected)
+            }
+        )
+        tcpClient = client
+        client.connect(host, port)
     }
 
-    fun stopTcp() {
-        tcpServer.stop()
+    fun stopWifiClient() {
+        Log.d(TAG, "Stopping WiFi")
+        tcpClient?.stop()
+        tcpClient = null
+        if (activeTransport == ActiveTransport.WIFI) activeTransport = ActiveTransport.NONE
+    }
+
+    fun stopBle() {
+        Log.d(TAG, "Stopping BLE")
+        bleServer.stop()
+        if (activeTransport == ActiveTransport.BLE) activeTransport = ActiveTransport.NONE
     }
 
     fun stopAll() {
+        Log.i(TAG, "Stopping all transports")
         bleServer.stop()
-        tcpServer.stop()
+        tcpClient?.stop()
+        tcpClient = null
+        activeTransport = ActiveTransport.NONE
     }
 
-    /** Send goodbye and then stop all transports. Blocks until complete or timeout. */
-    fun sendGoodbyeAndStop(goodbyeJson: String) {
-        val latch = java.util.concurrent.CountDownLatch(1)
+    fun sendAndStop(payload: ByteArray) {
+        Log.i(TAG, "Sending final payload and stopping")
+        val latch = CountDownLatch(1)
         sendExecutor.execute {
-            val data = goodbyeJson.toByteArray(Charsets.UTF_8)
-            if (bleServer.isConnected) {
-                bleServer.sendData(data)
-            }
-            if (tcpServer.isConnected) {
-                tcpServer.sendData(data)
+            when (activeTransport) {
+                ActiveTransport.BLE -> if (bleServer.isConnected) bleServer.sendData(payload)
+                ActiveTransport.WIFI -> tcpClient?.sendData(payload)
+                ActiveTransport.NONE -> {}
             }
             latch.countDown()
         }
-        latch.await(2, java.util.concurrent.TimeUnit.SECONDS)
-        bleServer.stop()
-        tcpServer.stop()
+        latch.await(2, TimeUnit.SECONDS)
+        stopAll()
     }
 
-    /** Force-disconnect BLE client and restart advertising */
     fun disconnectBle() {
+        Log.d(TAG, "Disconnecting BLE device")
         bleServer.disconnectDevice()
     }
 
-    /** Set BLE advertising power. true = idle/low, false = active/high */
     fun setBleLowPower(enabled: Boolean) {
+        Log.d(TAG, "BLE low power: $enabled")
         bleServer.setLowPower(enabled)
     }
 
-    /** Send a message through all connected transports */
-    fun send(json: String): Boolean {
-        val type = try {
-            org.json.JSONObject(json).optString("type", "?")
-        } catch (_: Exception) {
-            "?"
-        }
-
-        val bleConnected = bleServer.isConnected
-        val tcpConnected = tcpServer.isConnected
-
-        if (!bleConnected && !tcpConnected) {
-            Log.d(TAG, "SEND [$type] — no transport connected")
-            return false
-        }
-
-        val via = "${if (bleConnected) "BLE" else ""}${if (tcpConnected) "+TCP" else ""}"
-        Log.d(TAG, "SEND [$type] ${json.length} chars via $via")
-
-        val data = json.toByteArray(Charsets.UTF_8)
-
-        // BLE sendData blocks waiting for onNotificationSent, so run off main thread
-        sendExecutor.execute {
-            if (bleConnected) {
-                bleServer.sendData(data)
+    fun send(payload: ByteArray): Boolean {
+        Log.d(TAG, "Send via $activeTransport: ${payload.size} bytes")
+        return when (activeTransport) {
+            ActiveTransport.BLE -> {
+                if (!bleServer.isConnected) return false
+                sendExecutor.execute { bleServer.sendData(payload) }
+                true
             }
-            if (tcpConnected) {
-                tcpServer.sendData(data)
+
+            ActiveTransport.WIFI -> {
+                val client = tcpClient ?: return false
+                if (!client.isConnected) return false
+                sendExecutor.execute { client.sendData(payload) }
+                true
             }
-        }
-        return true
-    }
 
-    /** Update BLE status characteristic */
-    fun updateStatus(statusJson: String) {
-        bleServer.updateStatus(statusJson.toByteArray(Charsets.UTF_8))
-    }
-
-    private fun handleIncoming(raw: ByteArray) {
-        val json = String(raw, Charsets.UTF_8)
-        val type = try {
-            org.json.JSONObject(json).optString("type", "?")
-        } catch (e: Exception) {
-            Log.w(TAG, "JSON parse error: ${e.message}, raw[0..${minOf(80, json.length)}]: ${json.take(80)}")
-            "?"
+            ActiveTransport.NONE -> false
         }
-        Log.d(TAG, "RECV [$type] ${raw.size} bytes -> ${json.length} chars")
-        onMessageReceived(json)
     }
 }

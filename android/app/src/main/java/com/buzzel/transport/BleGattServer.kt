@@ -24,14 +24,12 @@ class BleGattServer(
         private const val ATT_OVERHEAD = 3
         private const val MIN_CHUNK_SIZE = 20
         private const val NOTIFICATION_TIMEOUT_SEC = 5L
-        private const val MAX_FRAME_SIZE = 1_000_000
     }
 
     private var bluetoothManager: BluetoothManager? = null
     private var gattServer: BluetoothGattServer? = null
     private var connectedDevice: BluetoothDevice? = null
-    private var smsCharacteristic: BluetoothGattCharacteristic? = null
-    private var statusCharacteristic: BluetoothGattCharacteristic? = null
+    private var dataCharacteristic: BluetoothGattCharacteristic? = null
     private var isAdvertising = false
     private var lowPower = true
     private var negotiatedMtu = DEFAULT_MTU
@@ -70,9 +68,8 @@ class BleGattServer(
             offset: Int,
             value: ByteArray
         ) {
-            if (characteristic.uuid == BleUuids.CONFIG_CHAR) {
+            if (characteristic.uuid == BleUuids.DATA_CHAR) {
                 if (responseNeeded) {
-                    // For prepared writes, must echo back offset and value per BLE spec
                     gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
                 }
                 if (preparedWrite) {
@@ -111,18 +108,6 @@ class BleGattServer(
             }
         }
 
-        override fun onCharacteristicReadRequest(
-            device: BluetoothDevice,
-            requestId: Int,
-            offset: Int,
-            characteristic: BluetoothGattCharacteristic
-        ) {
-            if (characteristic.uuid == BleUuids.STATUS_CHAR) {
-                val data = (statusCharacteristic?.value ?: """{"connected":true}""".toByteArray(Charsets.UTF_8))
-                gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, data)
-            }
-        }
-
         override fun onMtuChanged(device: BluetoothDevice, mtu: Int) {
             Log.d(TAG, "MTU changed: $mtu")
             negotiatedMtu = mtu
@@ -137,20 +122,8 @@ class BleGattServer(
     private fun processReceivedData(data: ByteArray) {
         synchronized(recvLock) {
             recvBuffer += data
-            while (recvBuffer.size >= 4) {
-                val length = (recvBuffer[0].toInt() and 0xFF shl 24) or
-                        (recvBuffer[1].toInt() and 0xFF shl 16) or
-                        (recvBuffer[2].toInt() and 0xFF shl 8) or
-                        (recvBuffer[3].toInt() and 0xFF)
-                if (length <= 0 || length > MAX_FRAME_SIZE) {
-                    recvBuffer = ByteArray(0)
-                    break
-                }
-                val totalNeeded = 4 + length
-                if (recvBuffer.size < totalNeeded) break
-                val payload = recvBuffer.copyOfRange(4, totalNeeded)
-                recvBuffer = recvBuffer.copyOfRange(totalNeeded, recvBuffer.size)
-                Log.d(TAG, "Frame received: $length bytes")
+            recvBuffer = FrameCodec.extractFrames(recvBuffer) { payload ->
+                Log.d(TAG, "Frame received: ${payload.size} bytes")
                 onMessageReceived(payload)
             }
         }
@@ -191,7 +164,6 @@ class BleGattServer(
         Log.d(TAG, "BLE GATT server stopped")
     }
 
-    /** Force-disconnect the current BLE client and restart advertising. */
     fun disconnectDevice() {
         val device = connectedDevice ?: return
         try {
@@ -210,9 +182,9 @@ class BleGattServer(
         }
     }
 
-    /** Switch between low-power (idle) and high-power (active) advertising */
     fun setLowPower(enabled: Boolean) {
         if (lowPower == enabled) return
+        Log.d(TAG, "Low power mode: $enabled")
         lowPower = enabled
         if (isAdvertising) {
             stopAdvertising()
@@ -222,20 +194,13 @@ class BleGattServer(
 
     fun sendData(data: ByteArray): Boolean {
         val device = connectedDevice ?: return false
-        val characteristic = smsCharacteristic ?: return false
+        val characteristic = dataCharacteristic ?: return false
 
-        // Frame: 4-byte big-endian length prefix + payload
-        val length = data.size
-        val frame = ByteArray(4 + length)
-        frame[0] = ((length shr 24) and 0xFF).toByte()
-        frame[1] = ((length shr 16) and 0xFF).toByte()
-        frame[2] = ((length shr 8) and 0xFF).toByte()
-        frame[3] = (length and 0xFF).toByte()
-        System.arraycopy(data, 0, frame, 4, length)
+        val frame = FrameCodec.encode(data)
 
-        // BLE MTU chunking (MTU minus 3 bytes ATT overhead)
         val chunkSize = (negotiatedMtu - ATT_OVERHEAD).coerceAtLeast(MIN_CHUNK_SIZE)
         val chunks = frame.toList().chunked(chunkSize)
+        Log.d(TAG, "Sending ${data.size} bytes in ${chunks.size} chunks (mtu=$negotiatedMtu)")
 
         for ((i, chunk) in chunks.withIndex()) {
             notificationSentSignal.clear()
@@ -245,7 +210,6 @@ class BleGattServer(
                 Log.w(TAG, "Failed to send notification chunk $i/${chunks.size}")
                 return false
             }
-            // Wait for onNotificationSent before sending next chunk
             if (i < chunks.size - 1) {
                 val status = notificationSentSignal.poll(NOTIFICATION_TIMEOUT_SEC, TimeUnit.SECONDS)
                 if (status == null) {
@@ -261,47 +225,17 @@ class BleGattServer(
         return true
     }
 
-    fun updateStatus(statusJson: ByteArray) {
-        statusCharacteristic?.value = statusJson
-        val device = connectedDevice
-        if (device != null && statusCharacteristic != null) {
-            gattServer?.notifyCharacteristicChanged(device, statusCharacteristic!!, false)
-        }
-    }
-
     val isConnected: Boolean
         get() = connectedDevice != null
 
     private fun setupService() {
         val service = BluetoothGattService(BleUuids.SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
 
-        // Config characteristic — Mac writes messages here (config, ready, goodbye, pong)
-        val configChar = BluetoothGattCharacteristic(
-            BleUuids.CONFIG_CHAR,
-            BluetoothGattCharacteristic.PROPERTY_WRITE,
+        // Single data characteristic — bidirectional (write + notify)
+        dataCharacteristic = BluetoothGattCharacteristic(
+            BleUuids.DATA_CHAR,
+            BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_NOTIFY,
             BluetoothGattCharacteristic.PERMISSION_WRITE
-        )
-        service.addCharacteristic(configChar)
-
-        // SMS characteristic — Android notifies Mac with SMS/ping/queue data
-        smsCharacteristic = BluetoothGattCharacteristic(
-            BleUuids.SMS_CHAR,
-            BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-            0
-        ).also {
-            val cccd = BluetoothGattDescriptor(
-                BleUuids.CCCD,
-                BluetoothGattDescriptor.PERMISSION_WRITE or BluetoothGattDescriptor.PERMISSION_READ
-            )
-            it.addDescriptor(cccd)
-            service.addCharacteristic(it)
-        }
-
-        // Status characteristic — readable status
-        statusCharacteristic = BluetoothGattCharacteristic(
-            BleUuids.STATUS_CHAR,
-            BluetoothGattCharacteristic.PROPERTY_READ or BluetoothGattCharacteristic.PROPERTY_NOTIFY,
-            BluetoothGattCharacteristic.PERMISSION_READ
         ).also {
             val cccd = BluetoothGattDescriptor(
                 BleUuids.CCCD,
@@ -312,6 +246,7 @@ class BleGattServer(
         }
 
         gattServer?.addService(service)
+        Log.d(TAG, "GATT service configured")
     }
 
     private fun startAdvertising() {

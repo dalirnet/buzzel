@@ -10,10 +10,10 @@ fi
 echo "Building $CONFIG..."
 
 if [ "$CONFIG" = "release" ]; then
-    ./gradlew assembleRelease -q || { echo "Build failed."; exit 1; }
+    ./gradlew assembleRelease --no-configuration-cache -q || { echo "Build failed."; exit 1; }
     APK=$(find app/build/outputs/apk/release -name '*.apk' 2>/dev/null | head -1)
 else
-    ./gradlew assembleDebug -q || { echo "Build failed."; exit 1; }
+    ./gradlew assembleDebug --no-configuration-cache -q || { echo "Build failed."; exit 1; }
     APK=$(find app/build/outputs/apk/debug -name '*.apk' 2>/dev/null | head -1)
 fi
 

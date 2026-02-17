@@ -2,6 +2,6 @@
 <resources>
     <style
         name="Theme.Buzzel"
-        parent="android:Theme.DeviceDefault.Light.NoActionBar"
+        parent="android:Theme.DeviceDefault.NoActionBar"
     />
 </resources>
