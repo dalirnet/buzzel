@@ -22,7 +22,6 @@ enum FrameCodec {
     while buffer.count >= headerSize {
       let length = decodeLength(buffer)
       guard length > 0, length <= maxPayload else {
-        print("[FrameCodec] Invalid frame size: \(length), resetting buffer")
         buffer = Data()
         return
       }
