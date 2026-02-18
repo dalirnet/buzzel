@@ -11,15 +11,9 @@ import kotlin.math.min
 class WaveBLogoView(
     context: Context,
 ) : View(context) {
-    companion object {
-        private const val STROKE_WIDTH = 64f
-    }
-
     private val paint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
+            style = Paint.Style.FILL
         }
 
     override fun onDraw(canvas: Canvas) {
@@ -28,7 +22,6 @@ class WaveBLogoView(
         val scale = size / Brand.logoViewbox
 
         paint.color = AppColors.text
-        paint.strokeWidth = STROKE_WIDTH * scale
 
         val path = PathParser.createPathFromPathData(Brand.logoPath)
         path.transform(Matrix().apply { postScale(scale, scale) })

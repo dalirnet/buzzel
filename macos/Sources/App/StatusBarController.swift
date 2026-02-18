@@ -117,7 +117,7 @@ class StatusBarController {
 
   private static func makeWaveBIcon() -> NSImage {
     let size: CGFloat = 24
-    let padding: CGFloat = 1
+    let padding: CGFloat = 4.5
     let drawSize = size - padding * 2
     let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { _ in
       guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
@@ -126,11 +126,8 @@ class StatusBarController {
       ctx.scaleBy(x: s, y: s)
       let cgPath = parseSVGPath(Brand.logoPath).cgPath
       ctx.addPath(cgPath)
-      ctx.setStrokeColor(NSColor.black.cgColor)
-      ctx.setLineWidth(64)
-      ctx.setLineCap(.round)
-      ctx.setLineJoin(.round)
-      ctx.strokePath()
+      ctx.setFillColor(NSColor.black.cgColor)
+      ctx.fillPath()
       return true
     }
     image.isTemplate = true

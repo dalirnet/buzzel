@@ -82,15 +82,9 @@ struct WaveBLogoView: View {
 
   var body: some View {
     let raw = parseSVGPath(Brand.logoPath)
-    let bounds = raw.boundingRect
-    let sw: CGFloat = 64
-    let totalW = bounds.width + sw
-    let totalH = bounds.height + sw
-    let maxDim = max(totalW, totalH)
-    let scale = size / maxDim
-    let strokeWidth = sw * scale
-    let ox = (size - bounds.width * scale) / 2 - bounds.minX * scale
-    let oy = (size - bounds.height * scale) / 2 - bounds.minY * scale
+    let scale = size / Brand.logoViewbox
+    let ox = (size - Brand.logoViewbox * scale) / 2
+    let oy = (size - Brand.logoViewbox * scale) / 2
 
     Path { p in
       p.addPath(
@@ -98,10 +92,7 @@ struct WaveBLogoView: View {
           CGAffineTransform(scaleX: scale, y: scale)
             .concatenating(CGAffineTransform(translationX: ox, y: oy))))
     }
-    .stroke(
-      DesignColor.text,
-      style: StrokeStyle(lineWidth: strokeWidth, lineCap: .round, lineJoin: .round)
-    )
+    .fill(DesignColor.text)
     .frame(width: size, height: size)
   }
 }
