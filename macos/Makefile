@@ -6,6 +6,11 @@ init:
 format:
 	sh format.sh
 
+.PHONY: prepare
+prepare:
+	sh prepare.sh
+	sh format.sh
+
 .PHONY: build
 build:
 	sh build.sh

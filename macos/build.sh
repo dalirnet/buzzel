@@ -33,7 +33,9 @@ else
 fi
 
 cp Resources/Info.plist build/Buzzel.app/Contents/
-cp Resources/AppIcon.icns build/Buzzel.app/Contents/Resources/ 2>/dev/null || true
+for f in AppIcon.icns Brand.json MeshGradient.png; do
+    cp "Resources/$f" build/Buzzel.app/Contents/Resources/ 2>/dev/null || true
+done
 
 codesign --force --sign - --entitlements Resources/Buzzel.entitlements build/Buzzel.app
 

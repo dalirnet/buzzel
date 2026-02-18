@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import SwiftUI
 
 class StatusBarController {
 
@@ -118,41 +119,18 @@ class StatusBarController {
     let size: CGFloat = 24
     let padding: CGFloat = 1
     let drawSize = size - padding * 2
-    let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { _ in
-      let path = NSBezierPath()
-      let s = drawSize / 512
-      let ox = padding
-      let oy = padding
-      path.move(to: NSPoint(x: ox + 170 * s, y: oy + (512 - 86) * s))
-      path.curve(
-        to: NSPoint(x: ox + 150 * s, y: oy + (512 - 150) * s),
-        controlPoint1: NSPoint(x: ox + 140 * s, y: oy + (512 - 86) * s),
-        controlPoint2: NSPoint(x: ox + 130 * s, y: oy + (512 - 120) * s))
-      path.curve(
-        to: NSPoint(x: ox + 150 * s, y: oy + (512 - 230) * s),
-        controlPoint1: NSPoint(x: ox + 170 * s, y: oy + (512 - 180) * s),
-        controlPoint2: NSPoint(x: ox + 170 * s, y: oy + (512 - 200) * s))
-      path.curve(
-        to: NSPoint(x: ox + 200 * s, y: oy + (512 - 400) * s),
-        controlPoint1: NSPoint(x: ox + 110 * s, y: oy + (512 - 290) * s),
-        controlPoint2: NSPoint(x: ox + 130 * s, y: oy + (512 - 370) * s))
-      path.curve(
-        to: NSPoint(x: ox + 380 * s, y: oy + (512 - 320) * s),
-        controlPoint1: NSPoint(x: ox + 270 * s, y: oy + (512 - 430) * s),
-        controlPoint2: NSPoint(x: ox + 370 * s, y: oy + (512 - 400) * s))
-      path.curve(
-        to: NSPoint(x: ox + 270 * s, y: oy + (512 - 190) * s),
-        controlPoint1: NSPoint(x: ox + 390 * s, y: oy + (512 - 240) * s),
-        controlPoint2: NSPoint(x: ox + 340 * s, y: oy + (512 - 190) * s))
-      path.curve(
-        to: NSPoint(x: ox + 180 * s, y: oy + (512 - 280) * s),
-        controlPoint1: NSPoint(x: ox + 220 * s, y: oy + (512 - 190) * s),
-        controlPoint2: NSPoint(x: ox + 180 * s, y: oy + (512 - 230) * s))
-      path.lineWidth = 64 * s
-      path.lineCapStyle = .round
-      path.lineJoinStyle = .round
-      NSColor.black.setStroke()
-      path.stroke()
+    let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { _ in
+      guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+      let s = drawSize / Brand.logoViewbox
+      ctx.translateBy(x: padding, y: padding)
+      ctx.scaleBy(x: s, y: s)
+      let cgPath = parseSVGPath(Brand.logoPath).cgPath
+      ctx.addPath(cgPath)
+      ctx.setStrokeColor(NSColor.black.cgColor)
+      ctx.setLineWidth(64)
+      ctx.setLineCap(.round)
+      ctx.setLineJoin(.round)
+      ctx.strokePath()
       return true
     }
     image.isTemplate = true

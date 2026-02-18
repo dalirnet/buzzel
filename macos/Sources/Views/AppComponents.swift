@@ -81,21 +81,22 @@ struct WaveBLogoView: View {
   let size: CGFloat
 
   var body: some View {
-    let pathW: CGFloat = 296
-    let pathH: CGFloat = 360
-    let maxDim = max(pathW, pathH)
+    let raw = parseSVGPath(Brand.logoPath)
+    let bounds = raw.boundingRect
+    let sw: CGFloat = 64
+    let totalW = bounds.width + sw
+    let totalH = bounds.height + sw
+    let maxDim = max(totalW, totalH)
     let scale = size / maxDim
-    let strokeWidth: CGFloat = 64 * scale
-    let ox = (size - pathW * scale) / 2 - 107 * scale
-    let oy = (size - pathH * scale) / 2 - 63 * scale
+    let strokeWidth = sw * scale
+    let ox = (size - bounds.width * scale) / 2 - bounds.minX * scale
+    let oy = (size - bounds.height * scale) / 2 - bounds.minY * scale
 
     Path { p in
-      let sub = parseSVGPath(
-        "M170 86 C140 86 130 120 150 150 C170 180 170 200 150 230 C110 290 130 370 200 400 C270 430 370 400 380 320 C390 240 340 190 270 190 C220 190 180 230 180 280"
-      )
-      let transform = CGAffineTransform(scaleX: scale, y: scale)
-        .concatenating(CGAffineTransform(translationX: ox, y: oy))
-      p.addPath(sub.applying(transform))
+      p.addPath(
+        raw.applying(
+          CGAffineTransform(scaleX: scale, y: scale)
+            .concatenating(CGAffineTransform(translationX: ox, y: oy))))
     }
     .stroke(
       DesignColor.text,
