@@ -84,7 +84,7 @@ class BuzzelService : Service() {
             }
         }
 
-    // MARK: Failover
+    // region Failover
 
     private fun buildFailoverSteps() {
         val primary = app.configStore.preferTransport ?: "wifi"
@@ -149,7 +149,9 @@ class BuzzelService : Service() {
         startFailover()
     }
 
-    // MARK: State Machine
+    // endregion
+
+    // region State Machine
 
     private fun transitionTo(newState: ConnectionState) {
         val oldState = state
@@ -215,7 +217,9 @@ class BuzzelService : Service() {
         handshakeTimeoutRunnable = null
     }
 
-    // MARK: Reliable Delivery
+    // endregion
+
+    // region Reliable Delivery
 
     fun sendCommand(
         cmd: Byte,
@@ -253,7 +257,9 @@ class BuzzelService : Service() {
         retryRunnable = null
     }
 
-    // MARK: Lifecycle
+    // endregion
+
+    // region Lifecycle
 
     override fun onCreate() {
         super.onCreate()
@@ -327,7 +333,9 @@ class BuzzelService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    // MARK: Message Handling
+    // endregion
+
+    // region Message Handling
 
     private fun handleMessage(payload: ByteArray) {
         if (payload.isEmpty()) return
@@ -431,7 +439,9 @@ class BuzzelService : Service() {
         // All command IDs reserved — dispatch as features are added
     }
 
-    // MARK: Notification
+    // endregion
+
+    // region Notification
 
     private fun buildNotification(): Notification {
         val intent = Intent(this, MainActivity::class.java)
@@ -457,4 +467,6 @@ class BuzzelService : Service() {
     private fun updateNotification() {
         getSystemService(android.app.NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }
+
+    // endregion
 }

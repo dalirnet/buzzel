@@ -27,7 +27,6 @@ class PowerButtonView(
 
     var onTap: (() -> Unit)? = null
 
-    // Paints
     private val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val ripplePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
@@ -48,13 +47,12 @@ class PowerButtonView(
             color = AppColors.onButton
         }
 
-    // Animation state
     private var currentColor: Int = stateColor(state)
     private var pulseScale: Float = 1f
     private var pressScale: Float = 1f
     private var rippleScale: Float = 1f
     private var rippleAlpha: Float = 0f
-    private var haloFraction: Float = 0f // 0=min, 1=max
+    private var haloFraction: Float = 0f
 
     private var pulseAnimator: ValueAnimator? = null
     private var colorAnimator: ValueAnimator? = null
@@ -80,7 +78,7 @@ class PowerButtonView(
             PowerButtonState.DISCONNECTED -> AppColors.mutedRed
         }
 
-    // --- Color Animation (300ms easeInOut) ---
+    // region Animation
 
     private fun animateColorChange(
         from: Int,
@@ -99,8 +97,6 @@ class PowerButtonView(
                 start()
             }
     }
-
-    // --- Pulse Animation (connecting) ---
 
     private fun updatePulse() {
         val shouldPulse = state == PowerButtonState.CONNECTING
@@ -125,13 +121,10 @@ class PowerButtonView(
         }
     }
 
-    // --- Press Animation (tap: scale 0.85, spring back) ---
-
     private fun animatePress() {
         pressAnimator?.cancel()
         rippleAnimator?.cancel()
 
-        // Press down
         pressAnimator =
             ValueAnimator.ofFloat(1f, 0.85f).apply {
                 duration = 100
@@ -141,7 +134,7 @@ class PowerButtonView(
                 }
                 start()
             }
-        // Ripple ring
+
         rippleAnimator =
             ValueAnimator.ofFloat(0f, 1f).apply {
                 duration = 400
@@ -154,7 +147,6 @@ class PowerButtonView(
                 start()
             }
 
-        // Spring back after 200ms
         postDelayed({
             pressAnimator?.cancel()
             pressAnimator =
@@ -170,25 +162,76 @@ class PowerButtonView(
         }, 200)
     }
 
-    // --- Draw ---
+    private fun startHaloPulse() {
+        if (haloAnimator != null) return
+        haloAnimator =
+            ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 2000
+                repeatMode = ValueAnimator.REVERSE
+                repeatCount = ValueAnimator.INFINITE
+                interpolator = AccelerateDecelerateInterpolator()
+                addUpdateListener {
+                    haloFraction = it.animatedValue as Float
+                    invalidate()
+                }
+                start()
+            }
+    }
+
+    // endregion
+
+    // region Lifecycle
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        startHaloPulse()
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        pulseAnimator?.cancel()
+        colorAnimator?.cancel()
+        pressAnimator?.cancel()
+        rippleAnimator?.cancel()
+        haloAnimator?.cancel()
+        haloAnimator = null
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus) {
+            updatePulse()
+            startHaloPulse()
+        } else {
+            pulseAnimator?.cancel()
+            pulseAnimator = null
+            pulseScale = 1f
+            haloAnimator?.cancel()
+            haloAnimator = null
+            haloFraction = 0f
+            rippleAnimator?.cancel()
+            rippleAlpha = 0f
+            invalidate()
+        }
+    }
+
+    // endregion
+
+    // region Drawing
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val cx = width / 2f
         val cy = height / 2f
         val viewRadius = min(cx, cy)
-
-        // Button radius: 90dp maps to the view size
         val btnRadius = viewRadius * pressScale
 
-        // 1. Soft halo (pulsing scale 1.10→1.25, opacity 5%→10%)
         val haloScale = 1.15f + haloFraction * 0.15f
-        val haloAlpha = (13 + haloFraction * 13).toInt() // 5%=13, 10%=26
+        val haloAlpha = (13 + haloFraction * 13).toInt()
         val haloRadius = btnRadius * haloScale
         haloPaint.color = AppColors.withAlpha(currentColor, haloAlpha)
         canvas.drawCircle(cx, cy, haloRadius, haloPaint)
 
-        // 2. Ripple ring (on tap)
         if (rippleAlpha > 0f) {
             val rr = btnRadius * rippleScale
             ripplePaint.color = AppColors.withAlpha(currentColor, (rippleAlpha * 255).toInt())
@@ -196,15 +239,12 @@ class PowerButtonView(
             canvas.drawCircle(cx, cy, rr, ripplePaint)
         }
 
-        // 3. Solid circle (pulses when connecting)
         val circleRadius = btnRadius * pulseScale
         circlePaint.color = currentColor
         canvas.drawCircle(cx, cy, circleRadius, circlePaint)
 
-        // 4. Shield icon (45% of button diameter, pulses with circle)
         val iconSize = circleRadius * 2 * 0.45f
         val iconScale = iconSize / 24f
-
         drawShieldIcon(canvas, cx, cy, iconScale)
     }
 
@@ -215,7 +255,6 @@ class PowerButtonView(
         scale: Float,
     ) {
         shieldStrokePaint.strokeWidth = scale * 1.5f
-        // Shield outline: default cap/join (butt/miter)
         shieldStrokePaint.strokeCap = Paint.Cap.BUTT
         shieldStrokePaint.strokeJoin = Paint.Join.MITER
 
@@ -226,12 +265,10 @@ class PowerButtonView(
                 postTranslate(cx, cy)
             }
 
-        // Draw shield outline
         val shieldPath = PathParser.createPathFromPathData(SHIELD_PATH)
         shieldPath.transform(matrix)
         canvas.drawPath(shieldPath, shieldStrokePaint)
 
-        // Draw inner icon
         when (state) {
             PowerButtonState.NO_PERMISSION -> drawWarning(canvas, cx, cy, scale)
             PowerButtonState.UNPAIRED -> drawKeyhole(canvas, cx, cy, scale)
@@ -252,7 +289,6 @@ class PowerButtonView(
             postTranslate(cx, cy)
         }
 
-    // shield-check: round cap + round join
     private fun drawCheck(
         canvas: Canvas,
         cx: Float,
@@ -267,7 +303,6 @@ class PowerButtonView(
         canvas.drawPath(p, innerStrokePaint)
     }
 
-    // shield-cross: round cap
     private fun drawCross(
         canvas: Canvas,
         cx: Float,
@@ -282,7 +317,6 @@ class PowerButtonView(
         canvas.drawPath(p, innerStrokePaint)
     }
 
-    // shield-keyhole: round join (uses arcs)
     private fun drawKeyhole(
         canvas: Canvas,
         cx: Float,
@@ -300,7 +334,6 @@ class PowerButtonView(
         canvas.drawPath(p, innerStrokePaint)
     }
 
-    // shield-up: round cap + round join
     private fun drawUp(
         canvas: Canvas,
         cx: Float,
@@ -318,7 +351,6 @@ class PowerButtonView(
         canvas.drawPath(p, innerStrokePaint)
     }
 
-    // shield-warning: line with round cap + filled dot
     private fun drawWarning(
         canvas: Canvas,
         cx: Float,
@@ -328,46 +360,13 @@ class PowerButtonView(
         innerStrokePaint.strokeWidth = scale * 1.5f
         innerStrokePaint.strokeCap = Paint.Cap.ROUND
         innerStrokePaint.strokeJoin = Paint.Join.MITER
-        // Exclamation line
         val line = PathParser.createPathFromPathData("M12 8v4")
         line.transform(makeMatrix(cx, cy, scale))
         canvas.drawPath(line, innerStrokePaint)
-        // Dot (filled circle at cx=12, cy=15, r=1)
-        val dotCx = cx + (12f - 12f) * scale
-        val dotCy = cy + (15f - 12f) * scale
-        canvas.drawCircle(dotCx, dotCy, scale, innerFillPaint)
+        canvas.drawCircle(cx, cy + 3f * scale, scale, innerFillPaint)
     }
 
-    override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        startHaloPulse()
-    }
-
-    override fun onDetachedFromWindow() {
-        super.onDetachedFromWindow()
-        pulseAnimator?.cancel()
-        colorAnimator?.cancel()
-        pressAnimator?.cancel()
-        rippleAnimator?.cancel()
-        haloAnimator?.cancel()
-        haloAnimator = null
-    }
-
-    private fun startHaloPulse() {
-        if (haloAnimator != null) return
-        haloAnimator =
-            ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 2000
-                repeatMode = ValueAnimator.REVERSE
-                repeatCount = ValueAnimator.INFINITE
-                interpolator = AccelerateDecelerateInterpolator()
-                addUpdateListener {
-                    haloFraction = it.animatedValue as Float
-                    invalidate()
-                }
-                start()
-            }
-    }
+    // endregion
 
     companion object {
         private const val SHIELD_PATH =
