@@ -123,7 +123,7 @@ struct AppHeaderLabel: View {
         .offset(y: -1)
 
       Text(displayedText)
-        .font(.system(size: 13, weight: .semibold, design: .rounded))
+        .font(Brand.font(size: 13, weight: .semibold))
         .foregroundColor(DesignColor.text)
         .animation(Self.charAnimation, value: displayedText)
     }

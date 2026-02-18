@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreText
 import Foundation
 import SwiftUI
 
@@ -7,6 +8,8 @@ enum Brand {
   private(set) static var logoPathReversed = ""
   private(set) static var logoViewbox: CGFloat = 512
   private(set) static var logoStrokeWidth: CGFloat = 46
+
+  static let fontName = "SofiaSans-Regular"
 
   private(set) static var splashLogoScale: CGFloat = 0.35
   private(set) static var splashLogoColorLight = Color.white
@@ -17,6 +20,10 @@ enum Brand {
   static func load() {
     if loaded { return }
     loaded = true
+
+    if let fontURL = Bundle.main.url(forResource: "SofiaSans", withExtension: "ttf") {
+      CTFontManagerRegisterFontsForURL(fontURL as CFURL, .process, nil)
+    }
 
     guard
       let url = Bundle.main.url(forResource: "Brand", withExtension: "json"),
@@ -37,6 +44,12 @@ enum Brand {
       }
       if let hex = splash["logo_color_dark"] as? String { splashLogoColorDark = colorFromHex(hex) }
     }
+  }
+
+  // MARK: - Font
+
+  static func font(size: CGFloat, weight: Font.Weight = .regular) -> Font {
+    .custom(fontName, size: size).weight(weight)
   }
 
   // MARK: - Reverse Path

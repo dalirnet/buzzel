@@ -57,7 +57,7 @@ struct MainView: View {
 
       if !isSubView, powerState == .connected, let device = store.pairedDevice {
         Text(device.name)
-          .font(.system(size: 10))
+          .font(Brand.font(size: 10))
           .foregroundColor(DesignColor.secondary)
           .padding(.horizontal, 8)
           .padding(.vertical, 4)
@@ -67,7 +67,7 @@ struct MainView: View {
 
       if showActivityLog, !transportManager.logEntries.isEmpty {
         Text("\(transportManager.logEntries.count)")
-          .font(.system(size: 10))
+          .font(Brand.font(size: 10))
           .foregroundColor(DesignColor.secondary)
           .padding(.horizontal, 8)
           .padding(.vertical, 4)
@@ -147,7 +147,7 @@ struct MainView: View {
           .font(.system(size: 24))
           .foregroundColor(DesignColor.secondary)
         Text("No network")
-          .font(.system(size: 12))
+          .font(Brand.font(size: 12))
           .foregroundColor(DesignColor.secondary)
       }
     }
@@ -187,7 +187,7 @@ struct MainView: View {
 
   private var statusLine: some View {
     Text(displayedStatusText)
-      .font(.system(size: 12))
+      .font(Brand.font(size: 12))
       .foregroundColor(DesignColor.secondary)
       .lineLimit(1)
       .truncationMode(.tail)

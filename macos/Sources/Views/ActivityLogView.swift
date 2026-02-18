@@ -8,7 +8,7 @@ struct ActivityLogView: View {
       VStack {
         Spacer()
         Text("No activity yet")
-          .font(.system(size: 13))
+          .font(Brand.font(size: 13))
           .foregroundColor(DesignColor.secondary)
         Spacer()
       }
@@ -44,13 +44,13 @@ private struct ActivityLogRow: View {
 
       VStack(alignment: .leading, spacing: 2) {
         Text(entry.message)
-          .font(.system(size: 13))
+          .font(Brand.font(size: 13))
           .foregroundColor(DesignColor.text)
           .lineLimit(2)
 
         if let error = entry.error {
           Text(error)
-            .font(.system(size: 11))
+            .font(Brand.font(size: 11))
             .foregroundColor(DesignColor.red)
             .lineLimit(1)
         }
@@ -60,12 +60,12 @@ private struct ActivityLogRow: View {
 
       VStack(alignment: .trailing, spacing: 2) {
         Text(entry.timeString)
-          .font(.system(size: 11))
+          .font(Brand.font(size: 11))
           .foregroundColor(DesignColor.secondary)
 
         if entry.direction != .local {
           Text(entry.direction == .incoming ? "IN" : "OUT")
-            .font(.system(size: 9, weight: .medium))
+            .font(Brand.font(size: 9, weight: .medium))
             .foregroundColor(DesignColor.secondary)
         }
       }
