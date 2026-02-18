@@ -144,21 +144,10 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       stopKeepalive()
       cancelHandshakeTimeout()
       cancelRetry()
-      DispatchQueue.main.async {
-        self.isConnected = false
-        self.activeTransport = ""
-      }
     case .connecting:
-      DispatchQueue.main.async {
-        self.isConnected = false
-        self.activeTransport = ""
-      }
+      break
     case .handshaking:
       startHandshakeTimeout()
-      DispatchQueue.main.async {
-        self.isConnected = false
-        self.activeTransport = ""
-      }
     case .active:
       cancelFailover()
       cancelHandshakeTimeout()
@@ -169,6 +158,13 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
         self.activeTransport = self.currentTransport?.rawValue.uppercased() ?? ""
       }
       startKeepalive()
+    }
+
+    if newState != .active {
+      DispatchQueue.main.async {
+        self.isConnected = false
+        self.activeTransport = ""
+      }
     }
   }
 

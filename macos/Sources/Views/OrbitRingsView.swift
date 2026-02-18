@@ -5,47 +5,15 @@ import SwiftUI
 struct OrbitRingsView<Content: View>: View {
   @ViewBuilder let content: () -> Content
 
-  private struct Ring {
-    let radius: CGFloat
-    let duration: Double  // seconds per full rotation, negative = reverse
-    let dots: [OrbitDot]
-  }
-
-  private struct OrbitDot {
-    let offset: Double  // 0...1 position along the ring
-    let size: CGFloat
-    let color: Color
-  }
-
-  private static var rings: [Ring] {
-    [
-      Ring(
-        radius: 84, duration: 12,
-        dots: [
-          OrbitDot(offset: 0.0, size: 6, color: DesignColor.accent),
-          OrbitDot(offset: 0.55, size: 4, color: DesignColor.green),
-        ]),
-      Ring(
-        radius: 110, duration: -18,
-        dots: [
-          OrbitDot(offset: 0.2, size: 5, color: DesignColor.orange),
-          OrbitDot(offset: 0.7, size: 3, color: DesignColor.accent),
-        ]),
-      Ring(
-        radius: 136, duration: 25,
-        dots: [
-          OrbitDot(offset: 0.4, size: 4, color: DesignColor.red),
-          OrbitDot(offset: 0.85, size: 3, color: DesignColor.green),
-        ]),
-    ]
-  }
-
   @State private var startDate = Date.now
+  @State private var isWindowFocused = true
+  @State private var pausedElapsed: TimeInterval = 0
 
   var body: some View {
     TimelineView(.animation) { timeline in
-      let elapsed = timeline.date.timeIntervalSince(startDate)
-
+      let elapsed =
+        isWindowFocused
+        ? timeline.date.timeIntervalSince(startDate) : pausedElapsed
       ZStack {
         ForEach(Array(Self.rings.enumerated()), id: \.offset) { _, ring in
           ringView(ring: ring, elapsed: elapsed)
@@ -55,7 +23,21 @@ struct OrbitRingsView<Content: View>: View {
       }
     }
     .frame(width: 294, height: 294)
+    .onReceive(
+      NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+    ) { _ in
+      startDate = Date.now.addingTimeInterval(-pausedElapsed)
+      isWindowFocused = true
+    }
+    .onReceive(
+      NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+    ) { _ in
+      pausedElapsed = Date.now.timeIntervalSince(startDate)
+      isWindowFocused = false
+    }
   }
+
+  // MARK: - Ring View
 
   private func ringView(ring: Ring, elapsed: TimeInterval) -> some View {
     let progress = elapsed / abs(ring.duration)
@@ -81,5 +63,42 @@ struct OrbitRingsView<Content: View>: View {
       }
     }
     .rotationEffect(.degrees(angle))
+  }
+
+  // MARK: - Models
+
+  private struct Ring {
+    let radius: CGFloat
+    let duration: Double
+    let dots: [OrbitDot]
+  }
+
+  private struct OrbitDot {
+    let offset: Double
+    let size: CGFloat
+    let color: Color
+  }
+
+  private static var rings: [Ring] {
+    [
+      Ring(
+        radius: 84, duration: 12,
+        dots: [
+          OrbitDot(offset: 0.0, size: 6, color: DesignColor.accent),
+          OrbitDot(offset: 0.55, size: 4, color: DesignColor.green),
+        ]),
+      Ring(
+        radius: 110, duration: -18,
+        dots: [
+          OrbitDot(offset: 0.2, size: 5, color: DesignColor.orange),
+          OrbitDot(offset: 0.7, size: 3, color: DesignColor.accent),
+        ]),
+      Ring(
+        radius: 136, duration: 25,
+        dots: [
+          OrbitDot(offset: 0.4, size: 4, color: DesignColor.red),
+          OrbitDot(offset: 0.85, size: 3, color: DesignColor.green),
+        ]),
+    ]
   }
 }

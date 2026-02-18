@@ -1,7 +1,5 @@
 import Foundation
 
-// MARK: - Log Event Type
-
 enum LogEventType: String {
   case deviceConnected
   case deviceDisconnected
@@ -9,22 +7,16 @@ enum LogEventType: String {
   case pairingFailed
 }
 
-// MARK: - Log Direction
-
 enum LogDirection {
   case incoming
   case outgoing
   case local
 }
 
-// MARK: - Log Status
-
 enum LogStatus {
   case success
   case failed
 }
-
-// MARK: - Log Entry
 
 struct LogEntry: Identifiable {
   private static let timeFormatter: DateFormatter = {

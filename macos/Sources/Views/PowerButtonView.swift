@@ -9,30 +9,20 @@ struct PowerButtonView: View {
   @State private var pulsing = false
   @State private var isPressed = false
   @State private var haloPulsing = false
+  @State private var isActive = true
 
   var body: some View {
     ZStack {
-      // Soft halo with gentle pulse
-      Circle()
-        .fill(stateColor.opacity(haloPulsing ? 0.10 : 0.05))
-        .scaleEffect(haloPulsing ? 1.30 : 1.15)
+      haloView
 
-      // Press ripple ring
       Circle()
         .stroke(stateColor.opacity(isPressed ? 0.3 : 0), lineWidth: 2)
         .scaleEffect(isPressed ? 1.3 : 1.0)
 
-      Circle()
-        .fill(stateColor)
-        .scaleEffect(pulsing ? 0.88 : 1.0)
-
-      iconView
-        .scaleEffect(pulsing ? 0.88 : 1.0)
+      pulseContent
     }
     .scaleEffect(isPressed ? 0.85 : 1.0)
     .animation(.easeInOut(duration: 0.3), value: stateColor)
-    .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
-    .animation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: haloPulsing)
     .animation(.spring(response: 0.3, dampingFraction: 0.5), value: isPressed)
     .onTapGesture {
       isPressed = true
@@ -49,15 +39,55 @@ struct PowerButtonView: View {
       updatePulse()
       haloPulsing = true
     }
+    .onReceive(
+      NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+    ) { _ in
+      isActive = true
+      haloPulsing = false
+      pulsing = false
+      DispatchQueue.main.async {
+        updatePulse()
+        haloPulsing = true
+      }
+    }
+    .onReceive(
+      NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+    ) { _ in
+      isActive = false
+    }
   }
 
-  private var stateColor: Color {
-    switch state {
-    case .noPermission: return DesignColor.mutedYellow
-    case .unpaired: return DesignColor.mutedGray
-    case .connecting: return DesignColor.mutedOrange
-    case .connected: return DesignColor.mutedGreen
-    case .disconnected: return DesignColor.mutedRed
+  @ViewBuilder
+  private var haloView: some View {
+    if isActive {
+      Circle()
+        .fill(stateColor.opacity(haloPulsing ? 0.10 : 0.05))
+        .scaleEffect(haloPulsing ? 1.30 : 1.15)
+        .animation(
+          .easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: haloPulsing)
+    } else {
+      Circle()
+        .fill(stateColor.opacity(0.05))
+        .scaleEffect(1.15)
+    }
+  }
+
+  @ViewBuilder
+  private var pulseContent: some View {
+    if isActive && pulsing {
+      Group {
+        Circle()
+          .fill(stateColor)
+          .scaleEffect(0.88)
+        iconView
+          .scaleEffect(0.88)
+      }
+      .animation(
+        .easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
+    } else {
+      Circle()
+        .fill(stateColor)
+      iconView
     }
   }
 
@@ -80,7 +110,6 @@ struct PowerButtonView: View {
       let offset = (size - iconSize) / 2
 
       ZStack {
-        // Shield outline — default lineCap/lineJoin per SVG source
         Path { p in
           let sub = parseSVGPath(Self.shieldPath)
           let transform = CGAffineTransform(scaleX: scale, y: scale)
@@ -89,9 +118,18 @@ struct PowerButtonView: View {
         }
         .stroke(DesignColor.onButton, style: StrokeStyle(lineWidth: scale * 1.5))
 
-        // Inner icon
         icon.view(scale: scale, offset: offset)
       }
+    }
+  }
+
+  private var stateColor: Color {
+    switch state {
+    case .noPermission: return DesignColor.mutedYellow
+    case .unpaired: return DesignColor.mutedGray
+    case .connecting: return DesignColor.mutedOrange
+    case .connected: return DesignColor.mutedGreen
+    case .disconnected: return DesignColor.mutedRed
     }
   }
 
@@ -111,7 +149,6 @@ struct PowerButtonView: View {
 
       switch self {
       case .check:
-        // SVG: stroke-linecap="round" stroke-linejoin="round"
         Path { p in
           p.addPath(parseSVGPath("M9.5 12.4l1.429 1.6l3.571-4").applying(transform))
         }
@@ -120,14 +157,12 @@ struct PowerButtonView: View {
           style: StrokeStyle(lineWidth: scale * 1.5, lineCap: .round, lineJoin: .round))
 
       case .cross:
-        // SVG: stroke-linecap="round"
         Path { p in
           p.addPath(parseSVGPath("M14.5 9.5l-5 5m0-5l5 5").applying(transform))
         }
         .stroke(DesignColor.onButton, style: StrokeStyle(lineWidth: scale * 1.5, lineCap: .round))
 
       case .keyhole:
-        // SVG: stroke-linejoin="round"
         Path { p in
           p.addPath(
             parseSVGPath(
@@ -137,7 +172,6 @@ struct PowerButtonView: View {
         .stroke(DesignColor.onButton, style: StrokeStyle(lineWidth: scale * 1.5, lineJoin: .round))
 
       case .up:
-        // SVG: stroke-linecap="round" stroke-linejoin="round"
         Path { p in
           p.addPath(
             parseSVGPath("M16 11.55L12.6 9a1 1 0 0 0-1.2 0L8 11.55m6 2.5l-2-1.5l-2 1.5").applying(
@@ -148,7 +182,6 @@ struct PowerButtonView: View {
           style: StrokeStyle(lineWidth: scale * 1.5, lineCap: .round, lineJoin: .round))
 
       case .warning:
-        // SVG: line stroke-linecap="round", dot is filled circle cx=12 cy=15 r=1
         ZStack {
           Path { p in
             p.addPath(parseSVGPath("M12 8v4").applying(transform))
