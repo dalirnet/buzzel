@@ -35,9 +35,8 @@ class AppHeaderView(
         logo = WaveBLogoView(context)
         addView(
             logo,
-            LayoutParams(dp(22), dp(22)).apply {
+            LayoutParams(dp(16), dp(16)).apply {
                 marginEnd = dp(10)
-                topMargin = -dp(1)
             },
         )
 
