@@ -2,8 +2,6 @@
 
 Dark and light mode. macOS uses pt, Android uses dp.
 
-### Android Scale Factors
-
 Android applies per-type scale factors for visual parity on phone screens:
 
 | Type       | Scale | Applies to                                |
@@ -18,7 +16,7 @@ Android applies per-type scale factors for visual parity on phone screens:
 
 ### Colors
 
-Resolved from platform system colors. macOS uses native color tokens directly. Android uses system theme attributes where reliable, with hardcoded fallbacks for older devices (pre-Android 10) where `UI_MODE_NIGHT_MASK` may not reflect the actual theme.
+Resolved from platform system colors. macOS uses native color tokens directly. Android uses system theme attributes where reliable, with hardcoded fallbacks for older devices (pre-Android 10).
 
 | Token       | Android                        | macOS                    | Usage                  |
 | ----------- | ------------------------------ | ------------------------ | ---------------------- |
@@ -33,15 +31,13 @@ Resolved from platform system colors. macOS uses native color tokens directly. A
 | `gray`      | system gray                    | `.systemGray`            | Unpaired               |
 | `onButton`  | white                          | `.white`                 | Icon on power button   |
 
-#### Android Dark Mode Detection
-
-Android 10+ uses the standard `UI_MODE_NIGHT_MASK`. Older devices (e.g. Nokia Android 9) may use vendor-specific settings like `theme_mode` in `Settings.Secure` (1=light, 2=dark). Check vendor setting first on pre-Q, then fall back to `uiMode`.
+Android dark mode: Android 10+ uses `UI_MODE_NIGHT_MASK`. Older devices may use vendor-specific `Settings.Secure` values (`theme_mode`: 1=light, 2=dark).
 
 #### Muted Colors (Power Button Fill)
 
-Soft adaptive fills per theme. Not raw system colors.
+Soft adaptive fills per theme.
 
-| Token         | Light RGB        | Dark RGB         | State         |
+| Token         | Light            | Dark             | State         |
 | ------------- | ---------------- | ---------------- | ------------- |
 | `mutedGray`   | 0.55, 0.55, 0.58 | 0.45, 0.45, 0.48 | Unpaired      |
 | `mutedYellow` | 0.95, 0.78, 0.10 | 0.92, 0.75, 0.08 | No permission |
@@ -51,7 +47,7 @@ Soft adaptive fills per theme. Not raw system colors.
 
 ### Typography
 
-System font on each platform (San Francisco / Roboto).
+System font (San Francisco / Roboto).
 
 | Token        | Size | Weight   | Notes   |
 | ------------ | ---- | -------- | ------- |
@@ -83,9 +79,9 @@ Base unit: **4**.
 | ------------ | ----- | --------------------- |
 | `icon.sm`    | 14    | App logo in header    |
 | `icon.md`    | 20    | Header trailing icon  |
-| `button.sm`  | 90    | Power button diameter |
-| `button.lg`  | 120   | Content frame, QR     |
-| `orbit.area` | 280   | Orbit rings container |
+| `button.sm`  | 94    | Power button diameter |
+| `button.lg`  | 126   | Content frame, QR     |
+| `orbit.area` | 294   | Orbit rings container |
 
 ### Layout
 
@@ -95,7 +91,7 @@ Base unit: **4**.
 | Header padding      | 16 x 12       | Horizontal x Vertical     |
 | Logo ↔ title gap    | 8             |                           |
 | Logo offset         | -1 top        | Optical alignment         |
-| Power button        | 90 in 120     | Centered in content frame |
+| Power button        | 94 in 126     | Centered in content frame |
 | QR code             | 120           | Circular                  |
 | Status line bottom  | 24            | Bottom padding            |
 | Status line padding | 16 x 8        | Horizontal x Vertical     |
@@ -103,7 +99,7 @@ Base unit: **4**.
 | Badge padding       | 8 x 4         | Horizontal x Vertical     |
 | Badge radius        | 4             |                           |
 | Badge bg            | secondary 10% |                           |
-| Window (macOS)      | 320 x 480     | Fixed size                |
+| Window (macOS)      | 360 x 640     | Fixed size, 9:16          |
 | Sheet (Android)     | 320 height    | Bottom sheet              |
 | Min touch target    | 44            |                           |
 
@@ -126,58 +122,43 @@ Base unit: **4**.
 
 ## Splash Screen
 
-Android only. Two-phase splash: an instant static background (window background) followed by an animated logo draw.
+Two-phase splash on both platforms: mesh gradient background followed by an animated logo draw/undraw.
 
 ### Background
 
-Mesh gradient using four overlapping radial gradients from each corner. Same PNG image for both static and animated phases to ensure seamless transition.
+Four overlapping radial gradients from each corner. Rendered to PNG by `prepare.sh`.
 
-| Corner       | Color     | Name       |
-| ------------ | --------- | ---------- |
-| Top-left     | `#023E8A` | Deep ocean |
-| Top-right    | `#0077B6` | Ocean blue |
-| Bottom-right | `#00B4D8` | Cyan       |
-| Bottom-left  | `#48CAE4` | Light cyan |
+| Corner       | Color     |
+| ------------ | --------- |
+| Top-left     | `#023E8A` |
+| Top-right    | `#0077B6` |
+| Bottom-right | `#00B4D8` |
+| Bottom-left  | `#48CAE4` |
 
 Radial gradient parameters: radius = `max(width, height) * 0.55`, solid to 40%, then fade to transparent. Base fill: `#023E8A`.
 
-System bars (status + navigation) are transparent with fullscreen layout flags so the gradient extends edge-to-edge.
-
 ### Logo Animation
 
-Uses the wave-b logo path drawn as a stroke via `PathMeasure.getSegment()`.
+Wave-b logo path (reversed, tail-to-head) drawn as a stroke. Android uses `PathMeasure.getSegment()`, macOS uses `Shape.trim(from:to:)`.
 
 | Property    | Value                               |
 | ----------- | ----------------------------------- |
 | Scale       | 35% of `min(width, height)`         |
 | Stroke      | 46 (in 512 viewbox), round cap/join |
-| Color light | `rgb(220, 245, 250)` (cyan tint)    |
-| Color dark  | `rgb(1, 30, 65)` (ocean tint)       |
+| Color light | `#DCF5FA` (cyan tint)               |
+| Color dark  | `#011E41` (ocean tint)              |
 
 ### Animation Sequence
 
-| Phase      | Duration | Delay | Easing                                  | Description                          |
-| ---------- | -------- | ----- | --------------------------------------- | ------------------------------------ |
-| Wait       | —        | 250ms | —                                       | Pause before drawing starts          |
-| Draw in    | 1000ms   | —     | `PathInterpolator(0.25, 0.7, 0.2, 1.0)` | Path draws from start to end         |
-| Undraw     | 1000ms   | —     | `PathInterpolator(0.8, 0.0, 0.75, 0.3)` | Path erases from start to end        |
-| Wait       | —        | 500ms | —                                       | Pause after undraw completes         |
-| Transition | 500ms    | —     | accelerate + decelerate                 | Slide down + fade to 50%, main stays |
+| Phase      | Duration | Delay | Easing                                    |
+| ---------- | -------- | ----- | ----------------------------------------- |
+| Wait       | —        | 250ms | —                                         |
+| Draw in    | 1000ms   | —     | `timingCurve(0.25, 0.7, 0.2, 1.0)`        |
+| Undraw     | 1000ms   | —     | `timingCurve(0.8, 0.0, 0.75, 0.3)`        |
+| Wait       | —        | 500ms | —                                         |
+| Transition | 500ms    | —     | easeInOut (macOS) / accel+decel (Android) |
 
-### Transition to Main
-
-The splash slides down off-screen while fading to 50% opacity. The main activity is already rendered underneath with no enter animation (`stay`). Uses `overridePendingTransition` with custom anim resources.
-
-### Assets
-
-| File                                 | Purpose                              |
-| ------------------------------------ | ------------------------------------ |
-| `assets/mesh_gradient.png`           | Source mesh gradient image           |
-| `assets/mesh_gradient.svg`           | SVG version of mesh gradient         |
-| `res/drawable/mesh_gradient.png`     | Android drawable (copy of source)    |
-| `res/drawable/splash_background.xml` | Bitmap wrapper for window background |
-| `res/anim/slide_down_out.xml`        | Splash exit: slide down + fade       |
-| `res/anim/stay.xml`                  | Main enter: stay visible             |
+Transition: splash slides down + fades out. On Android via `overridePendingTransition`, on macOS via SwiftUI if/else swap with `.move(edge: .bottom)`.
 
 ---
 
@@ -204,27 +185,27 @@ Persistent across views, content updates in place.
 
 Three concentric rings with orbiting dots around the center content area.
 
-- Container: 280 x 280
+- Container: 294 x 294
 - Ring stroke: 1pt, `secondary` at 8% opacity
 
 | Ring   | Radius | Duration | Direction         | Dots                       |
 | ------ | ------ | -------- | ----------------- | -------------------------- |
-| Inner  | 80     | 12s      | Clockwise         | 6pt `accent`, 4pt `green`  |
-| Middle | 105    | 18s      | Counter-clockwise | 5pt `orange`, 3pt `accent` |
-| Outer  | 130    | 25s      | Clockwise         | 4pt `red`, 3pt `green`     |
+| Inner  | 84     | 12s      | Clockwise         | 6pt `accent`, 4pt `green`  |
+| Middle | 110    | 18s      | Counter-clockwise | 5pt `orange`, 3pt `accent` |
+| Outer  | 136    | 25s      | Clockwise         | 4pt `red`, 3pt `green`     |
 
 Each dot: 60% opacity fill with a glow circle behind it (40% opacity, 1.8x dot diameter).
 
 ### Power Button
 
-Circular button at `button.sm` (90), centered in the orbit area.
+Circular button at `button.sm` (94), centered in the orbit area.
 
 **Layers (inner to outer):**
 
 1. Shield icon — 45% of button diameter, `onButton` color
 2. Solid circle — `mutedColor` fill, pulses when connecting
 3. Ripple ring — state color stroke, appears on tap only
-4. Halo — state color, continuous pulse animation (see Animation table)
+4. Halo — state color, continuous pulse animation
 
 | State         | Color         | Icon             | Tap Action         |
 | ------------- | ------------- | ---------------- | ------------------ |
@@ -258,7 +239,7 @@ Text changes animate with a 3D flip. Tap opens the Activity Log when connected.
 
 Scrollable list, newest entries first. Maximum 100 entries retained.
 
-Each row contains:
+Each row:
 
 - Status dot: 8pt circle, `green` for success, `red` for failure
 - Message: `logEntry` size, `text` color, 2 lines max
@@ -275,19 +256,20 @@ Empty state: "No activity yet" centered in `secondary` color.
 
 ### Android (Phone)
 
-- Portrait only
+- Portrait only, bottom sheet (320 height)
+- Splash screen with mesh gradient + logo draw/undraw
 - Foreground service notification when connected
-- QR: opens a full-screen camera activity
-- Activity log: in-window view with back button
-- Permissions required: Camera, Bluetooth, Location, Notifications
+- QR: full-screen camera activity
+- Permissions: Camera, Bluetooth, Location, Notifications
 
 ### macOS (Computer)
 
-- Fixed window: 320 x 480, hides on close (stays in status bar)
-- QR: displayed inline via AnimatedSwitcher, replacing the power button
-- Activity log: in-window view with back icon in header
-- Permissions required: Bluetooth only
-- Status bar icon using wave-b logo as template image
+- Fixed window: 360 x 640 (9:16), hides on close (stays in Dock + status bar)
+- Splash screen with mesh gradient + logo draw/undraw, same timing as Android
+- QR: inline via AnimatedSwitcher, replacing the power button
+- Permissions: Bluetooth only
+- App icon in Dock (`LSUIElement` false)
+- Status bar icon: wave-b logo as template image
 
 | Status Bar State | Appearance                 |
 | ---------------- | -------------------------- |
@@ -301,63 +283,69 @@ Right-click menu: connection status, Open App, Quit.
 
 ## Assets
 
-All shared assets live in the `assets/` folder at the project root.
+Shared assets in `assets/` use **kebab-case**. Generated files: **snake_case** (Android), **PascalCase** (macOS).
 
-| File                       | Size      | Purpose                  |
-| -------------------------- | --------- | ------------------------ |
-| `assets/logo.svg`          | 512x512   | App logo, black stroke   |
-| `assets/logo-animated.svg` | 512x512   | Animated draw-on variant |
-| `assets/mesh_gradient.svg` | 1080x1920 | Mesh gradient background |
+| File                       | Purpose                    |
+| -------------------------- | -------------------------- |
+| `assets/logo.svg`          | App logo (512x512, stroke) |
+| `assets/logo-animated.svg` | Animated draw-on variant   |
+| `assets/mesh-gradient.svg` | Mesh gradient (1080x1920)  |
+| `assets/brand.json`        | Shared brand config source |
 
 ### Logo
 
-Waveform lowercase **b**, single open stroke (viewbox 512x512, stroke-width 46, round cap/join). Black by default — color is applied by the rendering context (theme color for in-app header, tinted for splash).
+Waveform lowercase **b**, single open stroke (viewbox 512, stroke-width 46, round cap/join). Color applied by context: `text` for header, tinted for splash, template for status bar.
 
-Path data and brand config are loaded at runtime from `brand.json` via the `Brand` singleton on Android. The reversed path (start at bottom, for draw animation) is computed at runtime.
+Path data and brand config loaded at runtime from `brand.json` (`Brand.json` on macOS) via the `Brand` singleton. Reversed path (for draw animation) computed at runtime.
 
-### Mesh Gradient
+### Brand Config
 
-Four overlapping radial gradients, one per corner. See [Splash Screen](#splash-screen) for full specification.
+Generated by each platform's `prepare.sh`. Logo data extracted from `logo.svg`, splash parameters from `assets/brand.json`. Not manually maintained.
 
-### Brand Config (`brand.json`)
+| Platform | Generated file                   |
+| -------- | -------------------------------- |
+| Android  | `app/src/main/assets/brand.json` |
+| macOS    | `Resources/Brand.json`           |
 
-Runtime config generated by `prepare.sh` from the source SVGs. Contains logo path data, mesh gradient colors, and splash screen parameters. Not manually maintained.
-
-| Field                     | Source               | Description                      |
-| ------------------------- | -------------------- | -------------------------------- |
-| `logo.path`               | `logo.svg`           | SVG path d attribute             |
-| `logo.viewbox`            | `logo.svg`           | Viewbox size (square)            |
-| `logo.stroke_width`       | `logo.svg`           | Stroke width                     |
-| `mesh.colors`             | `mesh_gradient.svg`  | Gradient colors (TL, TR, BR, BL) |
-| `splash.logo_scale`       | `prepare.sh` default | Logo scale on splash (0.35)      |
-| `splash.logo_color_light` | `prepare.sh` default | Logo color for light mode        |
-| `splash.logo_color_dark`  | `prepare.sh` default | Logo color for dark mode         |
+| Field                     | Source              | Description                 |
+| ------------------------- | ------------------- | --------------------------- |
+| `logo.path`               | `logo.svg`          | SVG path d attribute        |
+| `logo.viewbox`            | `logo.svg`          | Viewbox size (square)       |
+| `logo.stroke_width`       | `logo.svg`          | Stroke width                |
+| `splash.logo_scale`       | `assets/brand.json` | Logo scale on splash (0.35) |
+| `splash.logo_color_light` | `assets/brand.json` | Logo color for light mode   |
+| `splash.logo_color_dark`  | `assets/brand.json` | Logo color for dark mode    |
 
 ### Asset Generation
 
-Android image assets and `brand.json` are generated from the source SVGs using `prepare.sh`. Run via Makefile:
+Run via Makefile: `cd <platform> && make prepare`
 
-```
-make prepare    # prepare.sh → format.sh
-```
+Android requires: `rsvg-convert`, `magick`, `ktlint`, `jq`, `xmllint`.
+macOS requires: `rsvg-convert`, `magick`, `iconutil`, `jq`.
 
-Requires `rsvg-convert`, `magick` (ImageMagick 7), `ktlint`, `jq`, `xmllint`.
+**Android:**
 
-| Generated file                                         | Source                           |
-| ------------------------------------------------------ | -------------------------------- |
-| `app/src/main/assets/brand.json`                       | `logo.svg` + `mesh_gradient.svg` |
-| `app/src/main/res/drawable/mesh_gradient.png`          | `mesh_gradient.svg`              |
-| `app/src/main/res/mipmap-*/ic_launcher.png`            | Both (composited)                |
-| `app/src/main/res/mipmap-*/ic_launcher_background.png` | `mesh_gradient.svg`              |
-| `app/src/main/res/mipmap-*/ic_launcher_foreground.png` | `logo.svg` (white, padded)       |
+| Generated file                            | Source                    |
+| ----------------------------------------- | ------------------------- |
+| `app/src/main/assets/brand.json`          | `logo.svg` + `brand.json` |
+| `res/drawable/mesh_gradient.png`          | `mesh-gradient.svg`       |
+| `res/mipmap-*/ic_launcher.png`            | Both (composited)         |
+| `res/mipmap-*/ic_launcher_background.png` | `mesh-gradient.svg`       |
+| `res/mipmap-*/ic_launcher_foreground.png` | `logo.svg`                |
+
+**macOS:**
+
+| Generated file               | Source                    |
+| ---------------------------- | ------------------------- |
+| `Resources/Brand.json`       | `logo.svg` + `brand.json` |
+| `Resources/MeshGradient.png` | `mesh-gradient.svg`       |
+| `Resources/AppIcon.icns`     | Both (composited)         |
 
 ---
 
 ## Icons
 
-UI icons are 24x24, stroke style, using `currentColor`. SVG path data is embedded directly in source code. The SVG path parser must support arc commands (A/a).
-
-### UI Icons
+24x24, stroke style, `currentColor`. SVG path data embedded in source code. Parser must support arc commands (A/a).
 
 | Icon             | Description        | Stroke Attributes                                    |
 | ---------------- | ------------------ | ---------------------------------------------------- |
