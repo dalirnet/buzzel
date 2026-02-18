@@ -1,7 +1,7 @@
 #!/bin/bash
 
 set -e
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 for cmd in ktlint jq xmllint; do
     command -v "$cmd" &>/dev/null || { echo "Error: $cmd required."; exit 1; }

@@ -1,34 +1,22 @@
-.PHONY: init
-init:
-	sh init.sh
+.PHONY: check
+check:
+	sh Scripts/check.sh
+
+.PHONY: assets
+assets:
+	sh Scripts/assets.sh
 
 .PHONY: format
 format:
-	sh format.sh
-
-.PHONY: prepare
-prepare:
-	sh prepare.sh
-	sh format.sh
+	sh Scripts/format.sh
 
 .PHONY: build
 build:
-	sh build.sh
+	sh Scripts/compile.sh
 
 .PHONY: release
 release:
-	sh build.sh release
-
-.PHONY: dist
-dist: release
-	cd build && zip -r Buzzel.zip Buzzel.app
-	@echo "Done: build/Buzzel.zip"
-
-.PHONY: run
-run: build
-	killall Buzzel 2>/dev/null || true
-	sleep 0.5
-	open build/Buzzel.app
+	sh Scripts/compile.sh release
 
 .PHONY: test
 test:
@@ -38,6 +26,17 @@ test:
 		Tests/ProtocolTests.swift
 	./build/test-protocol
 
+.PHONY: run
+run: build
+	killall Buzzel 2>/dev/null || true
+	sleep 0.5
+	open build/Buzzel.app
+
+.PHONY: dist
+dist: release
+	cd build && zip -r Buzzel.zip Buzzel.app
+	@echo "Done: build/Buzzel.zip"
+
 .PHONY: clean
 clean:
-	rm -rf build .build
+	sh Scripts/clean.sh
