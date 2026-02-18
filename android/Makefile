@@ -6,6 +6,11 @@ init:
 format:
 	sh format.sh
 
+.PHONY: prepare
+prepare:
+	sh prepare.sh
+	sh format.sh
+
 .PHONY: build
 build:
 	sh build.sh
@@ -22,7 +27,7 @@ dist: release
 .PHONY: run
 run: build
 	adb install -r $$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
-	adb shell am start -n com.buzzel/.ui.MainActivity
+	adb shell am start -n com.buzzel/.ui.SplashActivity
 
 .PHONY: test
 test:
