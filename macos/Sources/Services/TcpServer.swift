@@ -89,9 +89,11 @@ class TcpServer {
     }
   }
 
+  private static let wifiMaxPayload = BuzzelProtocol.maxPayload(BuzzelProtocol.wifiMaxFrame)
+
   private func readBody(length: Int) {
-    guard connection != nil, length > 0, length <= FrameCodec.maxPayload else {
-      if length <= 0 || length > FrameCodec.maxPayload {
+    guard connection != nil, length > 0, length <= TcpServer.wifiMaxPayload else {
+      if length <= 0 || length > TcpServer.wifiMaxPayload {
         os_log("Invalid frame size: %d", log: log, type: .error, length)
       }
       return

@@ -30,11 +30,16 @@ enum BleUuids {
 enum BuzzelProtocol {
 
   static let tcpPort: UInt16 = 48155
-  static let maxFrame = 256
   static let frameHeader = 2
-  static let maxPayload = maxFrame - frameHeader  // 254
   static let commandHeader = 3  // cmd(1) + seq(2)
-  static let maxTlvData = maxPayload - 1 - commandHeader  // 250
+  static let attOverhead = 3
+  static let tlvMaxValue = 255  // 1-byte Len field
+  static let wifiMaxFrame = 4096
+
+  static func maxPayload(_ maxFrame: Int) -> Int { maxFrame - frameHeader }
+  static func maxCmdData(_ maxFrame: Int) -> Int { maxPayload(maxFrame) - 1 - commandHeader }
+  static func maxTlvData(_ maxFrame: Int) -> Int { min(maxCmdData(maxFrame) - 2, tlvMaxValue) }
+  static func maxFrameForMtu(_ mtu: Int) -> Int { mtu - attOverhead }
 
   // MARK: QR
 
@@ -142,7 +147,9 @@ enum BuzzelProtocol {
     let data: Data
   }
 
-  static func createCommand(cmd: UInt8, seq: UInt16, tlvData: Data = Data()) -> Data {
+  static func createCommand(
+    cmd: UInt8, seq: UInt16, tlvData: Data = Data(), maxTlvData: Int = tlvMaxValue
+  ) -> Data {
     let dataLen = min(tlvData.count, maxTlvData)
     var buf = Data(capacity: 1 + commandHeader + dataLen)
     buf.append(Signal.command)
@@ -181,7 +188,7 @@ enum BuzzelProtocol {
   }
 
   static func tlvEncode(tag: UInt8, value: Data) -> Data {
-    let len = min(value.count, 248)
+    let len = min(value.count, tlvMaxValue)
     var buf = Data(capacity: 2 + len)
     buf.append(tag)
     buf.append(UInt8(len))

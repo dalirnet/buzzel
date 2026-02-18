@@ -27,6 +27,13 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   // Reassembly buffer for length-prefixed frames
   private var recvBuffer = Data()
 
+  // MTU-based frame limit
+  private var negotiatedMtu = 23  // BLE default
+
+  private var bleMaxPayload: Int {
+    BuzzelProtocol.maxPayload(BuzzelProtocol.maxFrameForMtu(negotiatedMtu))
+  }
+
   // Write queue — BLE only allows one outstanding write at a time
   private var writeQueue: [Data] = []
   private var isWriting = false
@@ -105,7 +112,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
 
   func send(_ data: Data) -> Bool {
     guard peripheral != nil, dataCharacteristic != nil else { return false }
-    let frame = FrameCodec.encode(data)
+    let frame = FrameCodec.encode(data, maxPayload: bleMaxPayload)
     os_log("BLE send: %d bytes (%d frame bytes)", log: log, type: .debug, data.count, frame.count)
     writeQueue.append(frame)
     drainWriteQueue()
@@ -206,6 +213,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     peripheral = nil
     dataCharacteristic = nil
     recvBuffer = Data()
+    negotiatedMtu = 23
     writeQueue.removeAll()
     isWriting = false
   }
@@ -239,6 +247,12 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     for char in service.characteristics ?? [] {
       if char.uuid == dataUUID {
         dataCharacteristic = char
+        // Read negotiated MTU from peripheral
+        let mtuPayload = peripheral.maximumWriteValueLength(for: .withResponse)
+        negotiatedMtu = mtuPayload + BuzzelProtocol.attOverhead
+        os_log(
+          "BLE negotiated MTU: %d (write payload: %d)", log: log, type: .debug, negotiatedMtu,
+          mtuPayload)
         // Subscribe to notifications on data char
         peripheral.setNotifyValue(true, for: char)
       }
@@ -263,7 +277,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     guard let data = characteristic.value else { return }
     os_log("BLE received %d bytes", log: log, type: .debug, data.count)
     recvBuffer.append(data)
-    FrameCodec.extractFrames(from: &recvBuffer) { [weak self] payload in
+    FrameCodec.extractFrames(from: &recvBuffer, maxPayload: bleMaxPayload) { [weak self] payload in
       self?.delegate?.bleDidReceiveData(payload)
     }
   }

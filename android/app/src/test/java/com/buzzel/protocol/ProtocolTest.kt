@@ -235,11 +235,11 @@ class ProtocolTest {
 
     @Test
     fun command_maxTlvData() {
-        val bigData = ByteArray(250) { it.toByte() }
+        val bigData = ByteArray(255) { it.toByte() }
         val payload = Protocol.createCommand(0x01, 1, bigData)
         val cmd = Protocol.parseCommand(payload)
         assertNotNull(cmd)
-        assertEquals(250, cmd!!.data.size)
+        assertEquals(255, cmd!!.data.size)
     }
 
     @Test
@@ -248,7 +248,18 @@ class ProtocolTest {
         val payload = Protocol.createCommand(0x01, 1, oversized)
         val cmd = Protocol.parseCommand(payload)
         assertNotNull(cmd)
-        assertEquals(Protocol.MAX_TLV_DATA, cmd!!.data.size)
+        assertEquals(Protocol.TLV_MAX_VALUE, cmd!!.data.size)
+    }
+
+    @Test
+    fun command_truncatesWithCustomMaxTlvData() {
+        val oversized = ByteArray(300) { it.toByte() }
+        val maxFrame = Protocol.maxFrameForMtu(247) // MTU 247 -> maxFrame 244
+        val maxTlv = Protocol.maxTlvData(maxFrame) // 236
+        val payload = Protocol.createCommand(0x01, 1, oversized, maxTlv)
+        val cmd = Protocol.parseCommand(payload)
+        assertNotNull(cmd)
+        assertEquals(maxTlv, cmd!!.data.size)
     }
 
     @Test
@@ -343,12 +354,33 @@ class ProtocolTest {
     }
 
     @Test
-    fun frameCodec_maxPayload() {
-        val payload = ByteArray(FrameCodec.MAX_PAYLOAD) { it.toByte() }
+    fun frameCodec_maxPayload_wifi() {
+        val wifiMaxPayload = Protocol.maxPayload(Protocol.WIFI_MAX_FRAME)
+        val payload = ByteArray(wifiMaxPayload) { it.toByte() }
         val frame = FrameCodec.encode(payload)
-        assertEquals(FrameCodec.MAX_PAYLOAD + 2, frame.size)
+        assertEquals(wifiMaxPayload + 2, frame.size)
         val header = frame.copyOfRange(0, 2)
-        assertEquals(FrameCodec.MAX_PAYLOAD, FrameCodec.decodeLength(header))
+        assertEquals(wifiMaxPayload, FrameCodec.decodeLength(header))
+    }
+
+    @Test
+    fun frameCodec_maxPayload_ble() {
+        val mtu = 247
+        val maxFrame = Protocol.maxFrameForMtu(mtu) // 244
+        val bleMaxPayload = Protocol.maxPayload(maxFrame) // 242
+        val payload = ByteArray(bleMaxPayload) { it.toByte() }
+        val frame = FrameCodec.encode(payload, bleMaxPayload)
+        assertEquals(bleMaxPayload + 2, frame.size)
+    }
+
+    @Test
+    fun frameCodec_truncatesForBle() {
+        val mtu = 185
+        val maxFrame = Protocol.maxFrameForMtu(mtu) // 182
+        val bleMaxPayload = Protocol.maxPayload(maxFrame) // 180
+        val oversized = ByteArray(300) { it.toByte() }
+        val frame = FrameCodec.encode(oversized, bleMaxPayload)
+        assertEquals(bleMaxPayload + 2, frame.size)
     }
 
     @Test
@@ -421,10 +453,23 @@ class ProtocolTest {
     }
 
     @Test
-    fun wireSize_commandMaxTlv() {
-        val tlv = ByteArray(Protocol.MAX_TLV_DATA)
-        val frame = FrameCodec.encode(Protocol.createCommand(0x01, 0, tlv))
-        assertEquals(Protocol.MAX_FRAME, frame.size) // exactly 256 bytes
+    fun wireSize_commandMaxTlv_wifi() {
+        val wifiMaxTlv = Protocol.maxTlvData(Protocol.WIFI_MAX_FRAME)
+        val tlv = ByteArray(wifiMaxTlv)
+        val frame = FrameCodec.encode(Protocol.createCommand(0x01, 0, tlv, wifiMaxTlv))
+        // signal(1) + cmd(1) + seq(2) + tlvData + frameHeader(2)
+        assertEquals(2 + 1 + Protocol.COMMAND_HEADER + wifiMaxTlv, frame.size)
+    }
+
+    @Test
+    fun wireSize_dynamicMtu() {
+        // Test frame size at MTU 247 (Nokia 6)
+        val maxFrame = Protocol.maxFrameForMtu(247) // 244
+        val maxCmd = Protocol.maxCmdData(maxFrame) // 238 (total TLV data area)
+        val tlv = ByteArray(maxCmd)
+        val payload = Protocol.createCommand(0x01, 0, tlv, maxCmd)
+        val frame = FrameCodec.encode(payload, Protocol.maxPayload(maxFrame))
+        assertEquals(maxFrame, frame.size)
     }
 
     // --- Big-Endian Byte-Level Verification ---
@@ -480,25 +525,25 @@ class ProtocolTest {
         assertEquals(200.toByte(), frame[1]) // low byte = 0xC8
     }
 
-    // --- TLV 248-Byte Limit ---
+    // --- TLV 255-Byte Limit ---
 
     @Test
     fun tlv_maxValueSize() {
-        val value = ByteArray(248) { it.toByte() }
+        val value = ByteArray(255) { it.toByte() }
         val encoded = Protocol.tlvEncode(0x01, value)
-        assertEquals(250, encoded.size) // tag(1) + len(1) + value(248)
+        assertEquals(257, encoded.size) // tag(1) + len(1) + value(255)
         val fields = Protocol.tlvDecode(encoded)
         assertEquals(1, fields.size)
-        assertEquals(248, fields[0].value.size)
+        assertEquals(255, fields[0].value.size)
     }
 
     @Test
     fun tlv_oversizedValueTruncated() {
         val value = ByteArray(300) { it.toByte() }
         val encoded = Protocol.tlvEncode(0x01, value)
-        assertEquals(250, encoded.size) // tag(1) + len(1) + capped at 248
+        assertEquals(257, encoded.size) // tag(1) + len(1) + capped at 255
         val fields = Protocol.tlvDecode(encoded)
-        assertEquals(248, fields[0].value.size)
+        assertEquals(255, fields[0].value.size)
     }
 
     @Test
@@ -520,7 +565,7 @@ class ProtocolTest {
 
     @Test
     fun tlv_stringMaxLength() {
-        val longStr = "a".repeat(248)
+        val longStr = "a".repeat(255)
         val encoded = Protocol.tlvEncodeString(0x01, longStr)
         val fields = Protocol.tlvDecode(encoded)
         assertEquals(longStr, Protocol.tlvGetString(fields, 0x01))
@@ -531,7 +576,7 @@ class ProtocolTest {
         val longStr = "a".repeat(300)
         val encoded = Protocol.tlvEncodeString(0x01, longStr)
         val fields = Protocol.tlvDecode(encoded)
-        assertEquals(248, fields[0].value.size)
+        assertEquals(255, fields[0].value.size)
     }
 
     // --- Malformed Input Edge Cases ---
@@ -658,9 +703,10 @@ class ProtocolTest {
 
     @Test
     fun frameCodec_oversizedPayloadTruncated() {
-        val payload = ByteArray(300) { it.toByte() }
+        val wifiMaxPayload = Protocol.maxPayload(Protocol.WIFI_MAX_FRAME)
+        val payload = ByteArray(wifiMaxPayload + 100) { it.toByte() }
         val frame = FrameCodec.encode(payload)
-        assertEquals(FrameCodec.MAX_PAYLOAD + 2, frame.size) // capped at 254 + 2
+        assertEquals(wifiMaxPayload + 2, frame.size) // capped at wifi max payload + header
     }
 
     @Test
@@ -730,6 +776,48 @@ class ProtocolTest {
         assertEquals(100, cmd.seq)
         assertEquals("test", Protocol.tlvGetString(Protocol.tlvDecode(cmd.data), 0x01))
         assertEquals(42, Protocol.tlvGetInt(Protocol.tlvDecode(cmd.data), 0x02))
+    }
+
+    // --- Dynamic Sizing ---
+
+    @Test
+    fun dynamicSizing_helpers() {
+        // WiFi: maxFrame=4096
+        assertEquals(4094, Protocol.maxPayload(4096))
+        assertEquals(4090, Protocol.maxCmdData(4096))
+        assertEquals(255, Protocol.maxTlvData(4096)) // capped by TLV_MAX_VALUE
+
+        // BLE MTU 247 (Nokia 6): maxFrame=244
+        assertEquals(244, Protocol.maxFrameForMtu(247))
+        assertEquals(242, Protocol.maxPayload(244))
+        assertEquals(238, Protocol.maxCmdData(244))
+        assertEquals(236, Protocol.maxTlvData(244)) // 238 - 2 (tag+len)
+
+        // BLE MTU 185 (iPhone): maxFrame=182
+        assertEquals(182, Protocol.maxFrameForMtu(185))
+        assertEquals(180, Protocol.maxPayload(182))
+        assertEquals(176, Protocol.maxCmdData(182))
+        assertEquals(174, Protocol.maxTlvData(182)) // 176 - 2 (tag+len)
+
+        // BLE MTU 23 (minimum): maxFrame=20
+        assertEquals(20, Protocol.maxFrameForMtu(23))
+        assertEquals(18, Protocol.maxPayload(20))
+        assertEquals(14, Protocol.maxCmdData(20))
+        assertEquals(12, Protocol.maxTlvData(20)) // 14 - 2 (tag+len)
+    }
+
+    @Test
+    fun dynamicSizing_signalsFitMinMtu() {
+        val minMaxPayload = Protocol.maxPayload(Protocol.maxFrameForMtu(23)) // 18
+        // All session signals must fit in minimum MTU
+        assertTrue(Protocol.createPing().size <= minMaxPayload)
+        assertTrue(Protocol.createPong().size <= minMaxPayload)
+        assertTrue(Protocol.createReady().size <= minMaxPayload)
+        assertTrue(Protocol.createGoodbye().size <= minMaxPayload)
+        assertTrue(Protocol.createUnpair().size <= minMaxPayload)
+        assertTrue(Protocol.createPairRequest("123456").size <= minMaxPayload)
+        assertTrue(Protocol.createPairResponse(true).size <= minMaxPayload)
+        assertTrue(Protocol.createAck(65535).size <= minMaxPayload)
     }
 
     // --- Helpers ---

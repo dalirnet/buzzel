@@ -1,6 +1,7 @@
 package com.buzzel.transport
 
 import android.util.Log
+import com.buzzel.protocol.Protocol
 import java.io.IOException
 import java.io.InputStream
 import java.net.InetSocketAddress
@@ -13,6 +14,7 @@ class TcpClient(
     companion object {
         private const val TAG = "TcpClient"
         private const val CONNECT_TIMEOUT_MS = 5000
+        private val WIFI_MAX_PAYLOAD = Protocol.maxPayload(Protocol.WIFI_MAX_FRAME)
     }
 
     private var socket: Socket? = null
@@ -83,7 +85,7 @@ class TcpClient(
             while (running && !socket.isClosed) {
                 val header = readExact(input, FrameCodec.HEADER_SIZE) ?: break
                 val length = FrameCodec.decodeLength(header)
-                if (length <= 0 || length > FrameCodec.MAX_PAYLOAD) {
+                if (length <= 0 || length > WIFI_MAX_PAYLOAD) {
                     Log.w(TAG, "Invalid frame size: $length")
                     break
                 }

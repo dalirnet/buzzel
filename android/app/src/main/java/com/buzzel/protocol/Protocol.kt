@@ -33,11 +33,19 @@ object Protocol {
     private const val TAG = "Protocol"
 
     const val TCP_PORT = 48155
-    const val MAX_FRAME = 256
     const val FRAME_HEADER = 2
-    const val MAX_PAYLOAD = MAX_FRAME - FRAME_HEADER // 254
     const val COMMAND_HEADER = 3 // cmd(1) + seq(2)
-    const val MAX_TLV_DATA = MAX_PAYLOAD - 1 - COMMAND_HEADER // 250
+    const val ATT_OVERHEAD = 3
+    const val TLV_MAX_VALUE = 255 // 1-byte Len field
+    const val WIFI_MAX_FRAME = 4096
+
+    fun maxPayload(maxFrame: Int): Int = maxFrame - FRAME_HEADER
+
+    fun maxCmdData(maxFrame: Int): Int = maxPayload(maxFrame) - 1 - COMMAND_HEADER
+
+    fun maxTlvData(maxFrame: Int): Int = minOf(maxCmdData(maxFrame) - 2, TLV_MAX_VALUE)
+
+    fun maxFrameForMtu(mtu: Int): Int = mtu - ATT_OVERHEAD
 
     // --- QR ---
 
@@ -167,8 +175,9 @@ object Protocol {
         cmd: Byte,
         seq: Int,
         tlvData: ByteArray = ByteArray(0),
+        maxTlvData: Int = TLV_MAX_VALUE,
     ): ByteArray {
-        val dataLen = minOf(tlvData.size, MAX_TLV_DATA)
+        val dataLen = minOf(tlvData.size, maxTlvData)
         val buf = ByteBuffer.allocate(1 + COMMAND_HEADER + dataLen).order(ByteOrder.BIG_ENDIAN)
         buf.put(Signal.COMMAND)
         buf.put(cmd)
@@ -184,7 +193,7 @@ object Protocol {
     )
 
     fun parseCommand(payload: ByteArray): Command? {
-        // payload: [0x00][cmd 1B][seq 2B][TLV 0-250B]
+        // payload: [0x00][cmd 1B][seq 2B][TLV 0-NB]
         if (payload.size < 4 || payload[0] != Signal.COMMAND) return null
         val cmd = payload[1]
         val seq =
@@ -203,7 +212,7 @@ object Protocol {
         tag: Byte,
         value: ByteArray,
     ): ByteArray {
-        val len = minOf(value.size, 248)
+        val len = minOf(value.size, TLV_MAX_VALUE)
         val result = ByteArray(2 + len)
         result[0] = tag
         result[1] = len.toByte()

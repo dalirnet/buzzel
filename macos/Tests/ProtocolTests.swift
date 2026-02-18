@@ -231,16 +231,24 @@ func testCommand() {
   let maxSeq = BuzzelProtocol.createCommand(cmd: 0x01, seq: 65535)
   assertEqual(BuzzelProtocol.parseCommand(maxSeq)!.seq, 65535, "command max seq")
 
-  // Max TLV
-  let bigData = Data(0..<250)
+  // Max TLV (default = 255, capped by TLV Len field)
+  let bigData = Data(0..<255)
   let big = BuzzelProtocol.createCommand(cmd: 0x01, seq: 1, tlvData: bigData)
-  assertEqual(BuzzelProtocol.parseCommand(big)!.data.count, 250, "command max tlv")
+  assertEqual(BuzzelProtocol.parseCommand(big)!.data.count, 255, "command max tlv")
 
-  // Truncate oversize
+  // Truncate oversize (default maxTlvData = tlvMaxValue = 255)
   let oversized = Data(count: 300)
   let trunc = BuzzelProtocol.createCommand(cmd: 0x01, seq: 1, tlvData: oversized)
   assertEqual(
-    BuzzelProtocol.parseCommand(trunc)!.data.count, BuzzelProtocol.maxTlvData, "command truncate")
+    BuzzelProtocol.parseCommand(trunc)!.data.count, BuzzelProtocol.tlvMaxValue, "command truncate")
+
+  // Truncate with custom maxTlvData (MTU 247 = Nokia 6)
+  let maxFrame247 = BuzzelProtocol.maxFrameForMtu(247)  // 244
+  let maxTlv247 = BuzzelProtocol.maxTlvData(maxFrame247)  // 236
+  let truncBle = BuzzelProtocol.createCommand(
+    cmd: 0x01, seq: 1, tlvData: oversized, maxTlvData: maxTlv247)
+  assertEqual(
+    BuzzelProtocol.parseCommand(truncBle)!.data.count, maxTlv247, "command truncate ble")
 
   // Too short
   assertNil(
@@ -311,10 +319,21 @@ func testFrameCodec() {
   let frame2 = FrameCodec.encode(Data([0x01, 0x02, 0x03]))
   assertEqual(FrameCodec.decodeLength(frame2), 3, "frame decodeLength")
 
-  // Max payload
-  let maxFrame = FrameCodec.encode(Data(0..<254))
-  assertEqual(maxFrame.count, 256, "frame max size")
-  assertEqual(FrameCodec.decodeLength(maxFrame), 254, "frame max decodeLength")
+  // Max payload (wifi)
+  let wifiMaxPayload = BuzzelProtocol.maxPayload(BuzzelProtocol.wifiMaxFrame)
+  let maxFrame = FrameCodec.encode(Data(count: wifiMaxPayload))
+  assertEqual(maxFrame.count, wifiMaxPayload + 2, "frame max size")
+  assertEqual(FrameCodec.decodeLength(maxFrame), wifiMaxPayload, "frame max decodeLength")
+
+  // Max payload (BLE MTU 247)
+  let bleMaxPayload = BuzzelProtocol.maxPayload(BuzzelProtocol.maxFrameForMtu(247))  // 242
+  let bleFrame = FrameCodec.encode(Data(count: bleMaxPayload), maxPayload: bleMaxPayload)
+  assertEqual(bleFrame.count, bleMaxPayload + 2, "frame ble max size")
+
+  // Truncate for BLE (MTU 185)
+  let ble185 = BuzzelProtocol.maxPayload(BuzzelProtocol.maxFrameForMtu(185))  // 180
+  let truncFrame = FrameCodec.encode(Data(count: 300), maxPayload: ble185)
+  assertEqual(truncFrame.count, ble185 + 2, "frame ble truncate size")
 
   // Extract frames
   var combined = FrameCodec.encode(BuzzelProtocol.createPing())
@@ -355,11 +374,23 @@ func testWireSize() {
     FrameCodec.encode(BuzzelProtocol.createCommand(cmd: 0x01, seq: 0)).count, 6,
     "wireSize commandEmpty")
 
-  // command (max TLV): exactly 256 bytes
-  let tlv = Data(count: BuzzelProtocol.maxTlvData)
+  // command (max TLV) at WiFi cap
+  let wifiMaxTlv = BuzzelProtocol.maxTlvData(BuzzelProtocol.wifiMaxFrame)
+  let tlv = Data(count: wifiMaxTlv)
+  let cmdFrame = FrameCodec.encode(
+    BuzzelProtocol.createCommand(cmd: 0x01, seq: 0, tlvData: tlv, maxTlvData: wifiMaxTlv))
+  // signal(1) + cmd(1) + seq(2) + tlvData + frameHeader(2)
   assertEqual(
-    FrameCodec.encode(BuzzelProtocol.createCommand(cmd: 0x01, seq: 0, tlvData: tlv)).count,
-    BuzzelProtocol.maxFrame, "wireSize commandMaxTlv")
+    cmdFrame.count, 2 + 1 + BuzzelProtocol.commandHeader + wifiMaxTlv, "wireSize commandMaxTlv wifi"
+  )
+
+  // command at MTU 247 (Nokia 6) — fill to max frame
+  let maxFrame247 = BuzzelProtocol.maxFrameForMtu(247)  // 244
+  let maxCmd247 = BuzzelProtocol.maxCmdData(maxFrame247)  // 238 (total TLV data area)
+  let blePayload = BuzzelProtocol.createCommand(
+    cmd: 0x01, seq: 0, tlvData: Data(count: maxCmd247), maxTlvData: maxCmd247)
+  let bleFrame = FrameCodec.encode(blePayload, maxPayload: BuzzelProtocol.maxPayload(maxFrame247))
+  assertEqual(bleFrame.count, maxFrame247, "wireSize commandMaxTlv ble")
 }
 
 // MARK: - Big-Endian Byte-Level Verification
@@ -403,23 +434,23 @@ func testBigEndian() {
   assertEqual(frame[1], 200, "BE frame header lo")
 }
 
-// MARK: - TLV 248-Byte Limit
+// MARK: - TLV 255-Byte Limit
 
 func testTlvLimits() {
-  // Max value = 248 bytes
-  let maxValue = Data(0..<248)
+  // Max value = 255 bytes (1-byte Len field)
+  let maxValue = Data(0..<255)
   let encoded = BuzzelProtocol.tlvEncode(tag: 0x01, value: maxValue)
-  assertEqual(encoded.count, 250, "tlvLimit max encoded size")
+  assertEqual(encoded.count, 257, "tlvLimit max encoded size")
   let fields = BuzzelProtocol.tlvDecode(encoded)
   assertEqual(fields.count, 1, "tlvLimit max field count")
-  assertEqual(fields[0].value.count, 248, "tlvLimit max value size")
+  assertEqual(fields[0].value.count, 255, "tlvLimit max value size")
 
   // Oversized truncated
   let oversized = Data(count: 300)
   let enc2 = BuzzelProtocol.tlvEncode(tag: 0x01, value: oversized)
-  assertEqual(enc2.count, 250, "tlvLimit oversized encoded size")
+  assertEqual(enc2.count, 257, "tlvLimit oversized encoded size")
   let f2 = BuzzelProtocol.tlvDecode(enc2)
-  assertEqual(f2[0].value.count, 248, "tlvLimit oversized value size")
+  assertEqual(f2[0].value.count, 255, "tlvLimit oversized value size")
 
   // Zero-length value
   let empty = BuzzelProtocol.tlvEncode(tag: 0x01, value: Data())
@@ -434,8 +465,8 @@ func testTlvLimits() {
   let f4 = BuzzelProtocol.tlvDecode(single)
   assertEqual(f4[0].value[0], 0xAB, "tlvLimit single value")
 
-  // String max 248
-  let longStr = String(repeating: "a", count: 248)
+  // String max 255
+  let longStr = String(repeating: "a", count: 255)
   let strEnc = BuzzelProtocol.tlvEncodeString(tag: 0x01, value: longStr)
   let sf = BuzzelProtocol.tlvDecode(strEnc)
   assertEqual(BuzzelProtocol.tlvGetString(sf, tag: 0x01), longStr, "tlvLimit string max")
@@ -444,7 +475,7 @@ func testTlvLimits() {
   let overStr = String(repeating: "a", count: 300)
   let overEnc = BuzzelProtocol.tlvEncodeString(tag: 0x01, value: overStr)
   let of = BuzzelProtocol.tlvDecode(overEnc)
-  assertEqual(of[0].value.count, 248, "tlvLimit string oversized")
+  assertEqual(of[0].value.count, 255, "tlvLimit string oversized")
 }
 
 // MARK: - Malformed Input Edge Cases
@@ -524,9 +555,10 @@ func testFrameCodecEdgeCases() {
   assertEqual(single[1], 0x01, "frameEdge single h1")
   assertEqual(single[2], 0xFF, "frameEdge single payload")
 
-  // Oversized payload truncated
-  let oversized = FrameCodec.encode(Data(count: 300))
-  assertEqual(oversized.count, FrameCodec.maxPayload + 2, "frameEdge oversized size")
+  // Oversized payload truncated (wifi default)
+  let wifiMaxPayload = BuzzelProtocol.maxPayload(BuzzelProtocol.wifiMaxFrame)
+  let oversized = FrameCodec.encode(Data(count: wifiMaxPayload + 100))
+  assertEqual(oversized.count, wifiMaxPayload + 2, "frameEdge oversized size")
 
   // extractFrames: partial frame
   var partial = FrameCodec.encode(BuzzelProtocol.createPing())
@@ -587,6 +619,49 @@ func testFrameCodecEdgeCases() {
   assertEqual(BuzzelProtocol.tlvGetInt(cmdFields, tag: 0x02), 42, "frameEdge roundTrip int")
 }
 
+// MARK: - Dynamic Sizing
+
+func testDynamicSizing() {
+  // WiFi: maxFrame=4096
+  assertEqual(BuzzelProtocol.maxPayload(4096), 4094, "dynamic wifi maxPayload")
+  assertEqual(BuzzelProtocol.maxCmdData(4096), 4090, "dynamic wifi maxCmdData")
+  assertEqual(BuzzelProtocol.maxTlvData(4096), 255, "dynamic wifi maxTlvData")  // capped by tlvMaxValue
+
+  // BLE MTU 247 (Nokia 6): maxFrame=244
+  assertEqual(BuzzelProtocol.maxFrameForMtu(247), 244, "dynamic mtu247 maxFrame")
+  assertEqual(BuzzelProtocol.maxPayload(244), 242, "dynamic mtu247 maxPayload")
+  assertEqual(BuzzelProtocol.maxCmdData(244), 238, "dynamic mtu247 maxCmdData")
+  assertEqual(BuzzelProtocol.maxTlvData(244), 236, "dynamic mtu247 maxTlvData")  // 238 - 2 (tag+len)
+
+  // BLE MTU 185 (iPhone): maxFrame=182
+  assertEqual(BuzzelProtocol.maxFrameForMtu(185), 182, "dynamic mtu185 maxFrame")
+  assertEqual(BuzzelProtocol.maxPayload(182), 180, "dynamic mtu185 maxPayload")
+  assertEqual(BuzzelProtocol.maxCmdData(182), 176, "dynamic mtu185 maxCmdData")
+  assertEqual(BuzzelProtocol.maxTlvData(182), 174, "dynamic mtu185 maxTlvData")  // 176 - 2 (tag+len)
+
+  // BLE MTU 23 (minimum): maxFrame=20
+  assertEqual(BuzzelProtocol.maxFrameForMtu(23), 20, "dynamic mtu23 maxFrame")
+  assertEqual(BuzzelProtocol.maxPayload(20), 18, "dynamic mtu23 maxPayload")
+  assertEqual(BuzzelProtocol.maxCmdData(20), 14, "dynamic mtu23 maxCmdData")
+  assertEqual(BuzzelProtocol.maxTlvData(20), 12, "dynamic mtu23 maxTlvData")  // 14 - 2 (tag+len)
+
+  // All session signals fit at minimum MTU (23)
+  let minMaxPayload = BuzzelProtocol.maxPayload(BuzzelProtocol.maxFrameForMtu(23))  // 18
+  assert(BuzzelProtocol.createPing().count <= minMaxPayload, "dynamic ping fits min MTU")
+  assert(BuzzelProtocol.createPong().count <= minMaxPayload, "dynamic pong fits min MTU")
+  assert(BuzzelProtocol.createReady().count <= minMaxPayload, "dynamic ready fits min MTU")
+  assert(BuzzelProtocol.createGoodbye().count <= minMaxPayload, "dynamic goodbye fits min MTU")
+  assert(BuzzelProtocol.createUnpair().count <= minMaxPayload, "dynamic unpair fits min MTU")
+  assert(
+    BuzzelProtocol.createPairRequest(code: "123456").count <= minMaxPayload,
+    "dynamic pairRequest fits min MTU")
+  assert(
+    BuzzelProtocol.createPairResponse(accepted: true).count <= minMaxPayload,
+    "dynamic pairResponse fits min MTU")
+  assert(
+    BuzzelProtocol.createAck(seq: 65535).count <= minMaxPayload, "dynamic ack fits min MTU")
+}
+
 // MARK: - Run
 
 @main
@@ -607,6 +682,7 @@ struct TestRunner {
     testTlvLimits()
     testMalformedInput()
     testFrameCodecEdgeCases()
+    testDynamicSizing()
 
     print("\n\(passed + failed) tests: \(passed) passed, \(failed) failed")
     if !errors.isEmpty {

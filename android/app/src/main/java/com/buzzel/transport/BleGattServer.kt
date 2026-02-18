@@ -17,6 +17,7 @@ import android.content.Context
 import android.os.ParcelUuid
 import android.util.Log
 import com.buzzel.protocol.BleUuids
+import com.buzzel.protocol.Protocol
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
@@ -141,11 +142,14 @@ class BleGattServer(
             }
         }
 
+    private val bleMaxPayload: Int
+        get() = Protocol.maxPayload(Protocol.maxFrameForMtu(negotiatedMtu))
+
     private fun processReceivedData(data: ByteArray) {
         synchronized(recvLock) {
             recvBuffer += data
             recvBuffer =
-                FrameCodec.extractFrames(recvBuffer) { payload ->
+                FrameCodec.extractFrames(recvBuffer, bleMaxPayload) { payload ->
                     Log.d(TAG, "Frame received: ${payload.size} bytes")
                     onMessageReceived(payload)
                 }
@@ -219,7 +223,7 @@ class BleGattServer(
         val device = connectedDevice ?: return false
         val characteristic = dataCharacteristic ?: return false
 
-        val frame = FrameCodec.encode(data)
+        val frame = FrameCodec.encode(data, bleMaxPayload)
 
         val chunkSize = (negotiatedMtu - ATT_OVERHEAD).coerceAtLeast(MIN_CHUNK_SIZE)
         val chunks = frame.toList().chunked(chunkSize)
