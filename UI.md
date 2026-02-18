@@ -77,7 +77,7 @@ Base unit: **4**.
 
 | Token        | Value | Used for              |
 | ------------ | ----- | --------------------- |
-| `icon.sm`    | 14    | App logo in header    |
+| `icon.sm`    | 16    | App logo in header    |
 | `icon.md`    | 20    | Header trailing icon  |
 | `button.sm`  | 94    | Power button diameter |
 | `button.lg`  | 126   | Content frame, QR     |
@@ -89,8 +89,7 @@ Base unit: **4**.
 | ------------------- | ------------- | ------------------------- |
 | Header height       | 48            |                           |
 | Header padding      | 16 x 12       | Horizontal x Vertical     |
-| Logo ↔ title gap    | 8             |                           |
-| Logo offset         | -1 top        | Optical alignment         |
+| Logo ↔ title gap    | 10            |                           |
 | Power button        | 94 in 126     | Centered in content frame |
 | QR code             | 120           | Circular                  |
 | Status line bottom  | 24            | Bottom padding            |
@@ -122,43 +121,45 @@ Base unit: **4**.
 
 ## Splash Screen
 
-Two-phase splash on both platforms: mesh gradient background followed by an animated logo draw/undraw.
+Mesh gradient background with Z-draw logo animation on both platforms.
 
 ### Background
 
-Four overlapping radial gradients from each corner. Rendered to PNG by `prepare.sh`.
+Four corner radial gradients plus three interior gradients at 50% opacity. Rendered to PNG by `prepare.sh`.
 
-| Corner       | Color     |
-| ------------ | --------- |
-| Top-left     | `#023E8A` |
-| Top-right    | `#0077B6` |
-| Bottom-right | `#00B4D8` |
-| Bottom-left  | `#48CAE4` |
+| Corner/Interior | Color     | Notes               |
+| --------------- | --------- | -------------------- |
+| Top-left        | `#00A86B` | Green                |
+| Top-right       | `#0099DD` | Blue                 |
+| Bottom-right    | `#CC9400` | Gold                 |
+| Bottom-left     | `#CC9400` | Gold                 |
+| Center-top      | `#007B9E` | Teal, 50% opacity    |
+| Center-left     | `#0099DD` | Blue, 50% opacity    |
+| Center-right    | `#00875A` | Deep green, 50% opacity |
 
-Radial gradient parameters: radius = `max(width, height) * 0.55`, solid to 40%, then fade to transparent. Base fill: `#023E8A`.
+Radial gradient parameters: corner radius 1400, solid to 25%, then fade to transparent. Interior radius 800–900, solid to 20%. Base fill: `#00A86B`.
 
 ### Logo Animation
 
-Wave-b logo path (reversed, tail-to-head) drawn as a stroke. Android uses `PathMeasure.getSegment()`, macOS uses `Shape.trim(from:to:)`.
+Z-shaped logo (3 filled parallelogram bars) revealed with a clip-rect draw animation. Each bar is revealed sequentially in a Z pattern: left→right, right→left, left→right. Android uses `ValueAnimator` + `Canvas.clipPath()`, macOS uses `CVDisplayLink` + `CGContext.clip()`.
 
-| Property    | Value                               |
-| ----------- | ----------------------------------- |
-| Scale       | 35% of `min(width, height)`         |
-| Stroke      | 46 (in 512 viewbox), round cap/join |
-| Color light | `#DCF5FA` (cyan tint)               |
-| Color dark  | `#011E41` (ocean tint)              |
+| Property    | Value                       |
+| ----------- | --------------------------- |
+| Scale       | 35% of `min(width, height)` |
+| Style       | Filled paths (no stroke)    |
+| Color light | `#FFFFFF`                   |
+| Color dark  | `#1A1A1A`                   |
 
 ### Animation Sequence
 
-| Phase      | Duration | Delay | Easing                                    |
-| ---------- | -------- | ----- | ----------------------------------------- |
-| Wait       | —        | 250ms | —                                         |
-| Draw in    | 1000ms   | —     | `timingCurve(0.25, 0.7, 0.2, 1.0)`        |
-| Undraw     | 1000ms   | —     | `timingCurve(0.8, 0.0, 0.75, 0.3)`        |
-| Wait       | —        | 500ms | —                                         |
-| Transition | 500ms    | —     | easeInOut (macOS) / accel+decel (Android) |
+| Bar   | Duration | Begin  | Direction    | Easing                            |
+| ----- | -------- | ------ | ------------ | --------------------------------- |
+| Bar 1 | 250ms    | 0ms    | Left→right   | `cubic-bezier(0.25, 0.1, 0.25, 1)` |
+| Bar 2 | 200ms    | 200ms  | Right→left   | `cubic-bezier(0.42, 0, 0.58, 1)`   |
+| Bar 3 | 250ms    | 350ms  | Left→right   | `cubic-bezier(0.25, 0.1, 0.6, 1)`  |
+| Wait  | —        | 500ms  | —            | —                                 |
 
-Transition: splash slides down + fades out. On Android via `overridePendingTransition`, on macOS via SwiftUI if/else swap with `.move(edge: .bottom)`.
+No delay before animation starts. No undraw phase. Transition: splash slides down. On Android via `overridePendingTransition`, on macOS via SwiftUI if/else swap with `.move(edge: .bottom)`.
 
 ---
 
@@ -257,7 +258,7 @@ Empty state: "No activity yet" centered in `secondary` color.
 ### Android (Phone)
 
 - Portrait only, bottom sheet (320 height)
-- Splash screen with mesh gradient + logo draw/undraw
+- Splash screen with mesh gradient + Z-draw logo animation
 - Foreground service notification when connected
 - QR: full-screen camera activity
 - Permissions: Camera, Bluetooth, Location, Notifications
@@ -265,11 +266,11 @@ Empty state: "No activity yet" centered in `secondary` color.
 ### macOS (Computer)
 
 - Fixed window: 360 x 640 (9:16), hides on close (stays in Dock + status bar)
-- Splash screen with mesh gradient + logo draw/undraw, same timing as Android
+- Splash screen with mesh gradient + Z-draw logo animation, same timing as Android
 - QR: inline via AnimatedSwitcher, replacing the power button
 - Permissions: Bluetooth only
 - App icon in Dock (`LSUIElement` false)
-- Status bar icon: wave-b logo as template image
+- Status bar icon: Z logo as template image
 
 | Status Bar State | Appearance                 |
 | ---------------- | -------------------------- |
@@ -285,64 +286,60 @@ Right-click menu: connection status, Open App, Quit.
 
 Shared assets in `assets/` use **kebab-case**. Generated files: **snake_case** (Android), **PascalCase** (macOS).
 
-| File                       | Purpose                    |
-| -------------------------- | -------------------------- |
-| `assets/logo.svg`          | App logo (512x512, stroke) |
-| `assets/logo-animated.svg` | Animated draw-on variant   |
-| `assets/mesh-gradient.svg` | Mesh gradient (1080x1920)  |
-| `assets/brand.json`        | Shared brand config source |
-| `assets/sofia-sans.ttf`    | Sofia Sans variable font   |
+| File                  | Purpose                   |
+| --------------------- | ------------------------- |
+| `assets/logo.svg`     | App logo (512x512, fill)  |
+| `assets/mesh.svg`     | Mesh gradient (1080x1920) |
+| `assets/sofia-sans.ttf` | Sofia Sans variable font |
 
 ### Logo
 
-Waveform lowercase **b**, single open stroke (viewbox 512, stroke-width 46, round cap/join). Color applied by context: `text` for header, tinted for splash, template for status bar.
+Z-shaped mark composed of three filled parallelogram paths (viewbox 512). No stroke. Color applied by context: `text` for header, white/dark for splash, template for status bar.
 
-Path data and brand config loaded at runtime from `brand.json` (`Brand.json` on macOS) via the `Brand` singleton. Reversed path (for draw animation) computed at runtime.
+Path data loaded at runtime from `brand.json` (`Brand.json` on macOS) via the `Brand` singleton. Splash config (scale, colors) hardcoded in platform `Brand` singletons.
 
 ### Brand Config
 
-Generated by each platform's `prepare.sh`. Logo data extracted from `logo.svg`, splash parameters from `assets/brand.json`. Not manually maintained.
+Generated by each platform's `prepare.sh`. Logo data extracted from `logo.svg`. Not manually maintained.
 
 | Platform | Generated file                   |
 | -------- | -------------------------------- |
 | Android  | `app/src/main/assets/brand.json` |
 | macOS    | `Resources/Brand.json`           |
 
-| Field                     | Source              | Description                 |
-| ------------------------- | ------------------- | --------------------------- |
-| `logo.path`               | `logo.svg`          | SVG path d attribute        |
-| `logo.viewbox`            | `logo.svg`          | Viewbox size (square)       |
-| `logo.stroke_width`       | `logo.svg`          | Stroke width                |
-| `splash.logo_scale`       | `assets/brand.json` | Logo scale on splash (0.35) |
-| `splash.logo_color_light` | `assets/brand.json` | Logo color for light mode   |
-| `splash.logo_color_dark`  | `assets/brand.json` | Logo color for dark mode    |
+| Field          | Source     | Description          |
+| -------------- | ---------- | -------------------- |
+| `logo.path`    | `logo.svg` | SVG path d attribute |
+| `logo.viewbox` | `logo.svg` | Viewbox size (square) |
 
 ### Asset Generation
 
-Run via Makefile: `cd <platform> && make prepare`
+Run via Makefile: `cd <platform> && make prepare`. No arguments needed.
 
 Android requires: `rsvg-convert`, `magick`.
 macOS requires: `rsvg-convert`, `magick`, `iconutil`.
 
+App icon foreground: white logo on mesh gradient background. Padding: 500 (Android), 225 (macOS).
+
 **Android:**
 
-| Generated file                            | Source                    |
-| ----------------------------------------- | ------------------------- |
-| `app/src/main/assets/brand.json`          | `logo.svg` + `brand.json` |
-| `app/src/main/assets/sofia-sans.ttf`      | `sofia-sans.ttf`          |
-| `res/drawable/mesh_gradient.png`          | `mesh-gradient.svg`       |
-| `res/mipmap-*/ic_launcher.png`            | Both (composited)         |
-| `res/mipmap-*/ic_launcher_background.png` | `mesh-gradient.svg`       |
-| `res/mipmap-*/ic_launcher_foreground.png` | `logo.svg`                |
+| Generated file                            | Source            |
+| ----------------------------------------- | ----------------- |
+| `app/src/main/assets/brand.json`          | `logo.svg`        |
+| `app/src/main/assets/sofia-sans.ttf`      | `sofia-sans.ttf`  |
+| `res/drawable/mesh.png`                   | `mesh.svg`        |
+| `res/mipmap-*/ic_launcher.png`            | Both (composited) |
+| `res/mipmap-*/ic_launcher_background.png` | `mesh.svg`        |
+| `res/mipmap-*/ic_launcher_foreground.png` | `logo.svg`        |
 
 **macOS:**
 
-| Generated file               | Source                    |
-| ---------------------------- | ------------------------- |
-| `Resources/Brand.json`       | `logo.svg` + `brand.json` |
-| `Resources/SofiaSans.ttf`    | `sofia-sans.ttf`          |
-| `Resources/MeshGradient.png` | `mesh-gradient.svg`       |
-| `Resources/AppIcon.icns`     | Both (composited)         |
+| Generated file            | Source            |
+| ------------------------- | ----------------- |
+| `Resources/Brand.json`    | `logo.svg`        |
+| `Resources/SofiaSans.ttf` | `sofia-sans.ttf`  |
+| `Resources/Mesh.png`      | `mesh.svg`        |
+| `Resources/AppIcon.icns`  | Both (composited) |
 
 ---
 
