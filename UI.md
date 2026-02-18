@@ -18,20 +18,24 @@ Android applies per-type scale factors for visual parity on phone screens:
 
 ### Colors
 
-Resolved from platform system colors. No hardcoded hex values.
+Resolved from platform system colors. macOS uses native color tokens directly. Android uses system theme attributes where reliable, with hardcoded fallbacks for older devices (pre-Android 10) where `UI_MODE_NIGHT_MASK` may not reflect the actual theme.
 
-| Token       | Android              | macOS                    | Usage                  |
-| ----------- | -------------------- | ------------------------ | ---------------------- |
-| `text`      | `textColorPrimary`   | `.labelColor`            | Primary text, logo     |
-| `secondary` | `textColorSecondary` | `.secondaryLabelColor`   | Secondary text, badges |
-| `surface`   | `windowBackground`   | `.windowBackgroundColor` | Window background      |
-| `border`    | `divider`            | `.separatorColor`        | Dividers, drag handle  |
-| `accent`    | `colorAccent`        | `.controlAccentColor`    | QR icon, orbit dots    |
-| `green`     | system green         | `.systemGreen`           | Success, orbit dots    |
-| `orange`    | system orange        | `.systemOrange`          | Connecting, orbit dots |
-| `red`       | system red           | `.systemRed`             | Error, disconnected    |
-| `gray`      | system gray          | `.systemGray`            | Unpaired               |
-| `onButton`  | white                | `.white`                 | Icon on power button   |
+| Token       | Android                        | macOS                    | Usage                  |
+| ----------- | ------------------------------ | ------------------------ | ---------------------- |
+| `text`      | `textColorPrimary` / hardcoded | `.labelColor`            | Primary text, logo     |
+| `secondary` | `textColorSecondary` / gray    | `.secondaryLabelColor`   | Secondary text, badges |
+| `surface`   | hardcoded per theme            | `.windowBackgroundColor` | Window background      |
+| `border`    | `text` at 12% opacity          | `.separatorColor`        | Dividers, drag handle  |
+| `accent`    | `colorAccent`                  | `.controlAccentColor`    | QR icon, orbit dots    |
+| `green`     | system green                   | `.systemGreen`           | Success, orbit dots    |
+| `orange`    | system orange                  | `.systemOrange`          | Connecting, orbit dots |
+| `red`       | system red                     | `.systemRed`             | Error, disconnected    |
+| `gray`      | system gray                    | `.systemGray`            | Unpaired               |
+| `onButton`  | white                          | `.white`                 | Icon on power button   |
+
+#### Android Dark Mode Detection
+
+Android 10+ uses the standard `UI_MODE_NIGHT_MASK`. Older devices (e.g. Nokia Android 9) may use vendor-specific settings like `theme_mode` in `Settings.Secure` (1=light, 2=dark). Check vendor setting first on pre-Q, then fall back to `uiMode`.
 
 #### Muted Colors (Power Button Fill)
 
@@ -117,6 +121,63 @@ Base unit: **4**.
 | Status flip    | 250ms    | easeInOut then spring     | 3D rotation on X-axis                               |
 | Orbit rotation | 12–25s   | linear                    | Continuous, synced to display refresh               |
 | Menu bar blink | 1000ms   | toggle                    | macOS only                                          |
+
+---
+
+## Splash Screen
+
+Android only. Two-phase splash: an instant static background (window background) followed by an animated logo draw.
+
+### Background
+
+Mesh gradient using four overlapping radial gradients from each corner. Same PNG image for both static and animated phases to ensure seamless transition.
+
+| Corner       | Color     | Name       |
+| ------------ | --------- | ---------- |
+| Top-left     | `#023E8A` | Deep ocean |
+| Top-right    | `#0077B6` | Ocean blue |
+| Bottom-right | `#00B4D8` | Cyan       |
+| Bottom-left  | `#48CAE4` | Light cyan |
+
+Radial gradient parameters: radius = `max(width, height) * 0.55`, solid to 40%, then fade to transparent. Base fill: `#023E8A`.
+
+System bars (status + navigation) are transparent with fullscreen layout flags so the gradient extends edge-to-edge.
+
+### Logo Animation
+
+Uses the wave-b logo path drawn as a stroke via `PathMeasure.getSegment()`.
+
+| Property    | Value                               |
+| ----------- | ----------------------------------- |
+| Scale       | 35% of `min(width, height)`         |
+| Stroke      | 46 (in 512 viewbox), round cap/join |
+| Color light | `rgb(220, 245, 250)` (cyan tint)    |
+| Color dark  | `rgb(1, 30, 65)` (ocean tint)       |
+
+### Animation Sequence
+
+| Phase      | Duration | Delay | Easing                                  | Description                          |
+| ---------- | -------- | ----- | --------------------------------------- | ------------------------------------ |
+| Wait       | —        | 250ms | —                                       | Pause before drawing starts          |
+| Draw in    | 1000ms   | —     | `PathInterpolator(0.25, 0.7, 0.2, 1.0)` | Path draws from start to end         |
+| Undraw     | 1000ms   | —     | `PathInterpolator(0.8, 0.0, 0.75, 0.3)` | Path erases from start to end        |
+| Wait       | —        | 500ms | —                                       | Pause after undraw completes         |
+| Transition | 500ms    | —     | accelerate + decelerate                 | Slide down + fade to 50%, main stays |
+
+### Transition to Main
+
+The splash slides down off-screen while fading to 50% opacity. The main activity is already rendered underneath with no enter animation (`stay`). Uses `overridePendingTransition` with custom anim resources.
+
+### Assets
+
+| File                                 | Purpose                              |
+| ------------------------------------ | ------------------------------------ |
+| `assets/mesh_gradient.png`           | Source mesh gradient image           |
+| `assets/mesh_gradient.svg`           | SVG version of mesh gradient         |
+| `res/drawable/mesh_gradient.png`     | Android drawable (copy of source)    |
+| `res/drawable/splash_background.xml` | Bitmap wrapper for window background |
+| `res/anim/slide_down_out.xml`        | Splash exit: slide down + fade       |
+| `res/anim/stay.xml`                  | Main enter: stay visible             |
 
 ---
 
@@ -238,18 +299,63 @@ Right-click menu: connection status, Open App, Quit.
 
 ---
 
-## Icons
+## Assets
 
-UI icons are 24x24, stroke style, using `currentColor`. SVG path data is embedded directly in source code. The SVG path parser must support arc commands (A/a).
+All shared assets live in the `assets/` folder at the project root.
+
+| File                       | Size      | Purpose                  |
+| -------------------------- | --------- | ------------------------ |
+| `assets/logo.svg`          | 512x512   | App logo, black stroke   |
+| `assets/logo-animated.svg` | 512x512   | Animated draw-on variant |
+| `assets/mesh_gradient.svg` | 1080x1920 | Mesh gradient background |
 
 ### Logo
 
-| File                | Size    | Purpose                  |
-| ------------------- | ------- | ------------------------ |
-| `logo.svg`          | 512x512 | App logo with gradient   |
-| `logo-animated.svg` | 512x512 | Animated draw-on variant |
+Waveform lowercase **b**, single open stroke (viewbox 512x512, stroke-width 46, round cap/join). Black by default — color is applied by the rendering context (theme color for in-app header, tinted for splash).
 
-Waveform lowercase **b**, single open stroke. Deep Ocean gradient: `#0077B6 → #00B4D8 → #48CAE4 → #90E0EF`.
+Path data and brand config are loaded at runtime from `brand.json` via the `Brand` singleton on Android. The reversed path (start at bottom, for draw animation) is computed at runtime.
+
+### Mesh Gradient
+
+Four overlapping radial gradients, one per corner. See [Splash Screen](#splash-screen) for full specification.
+
+### Brand Config (`brand.json`)
+
+Runtime config generated by `prepare.sh` from the source SVGs. Contains logo path data, mesh gradient colors, and splash screen parameters. Not manually maintained.
+
+| Field                     | Source               | Description                      |
+| ------------------------- | -------------------- | -------------------------------- |
+| `logo.path`               | `logo.svg`           | SVG path d attribute             |
+| `logo.viewbox`            | `logo.svg`           | Viewbox size (square)            |
+| `logo.stroke_width`       | `logo.svg`           | Stroke width                     |
+| `mesh.colors`             | `mesh_gradient.svg`  | Gradient colors (TL, TR, BR, BL) |
+| `splash.logo_scale`       | `prepare.sh` default | Logo scale on splash (0.35)      |
+| `splash.logo_color_light` | `prepare.sh` default | Logo color for light mode        |
+| `splash.logo_color_dark`  | `prepare.sh` default | Logo color for dark mode         |
+
+### Asset Generation
+
+Android image assets and `brand.json` are generated from the source SVGs using `prepare.sh`. Run via Makefile:
+
+```
+make prepare    # prepare.sh → format.sh
+```
+
+Requires `rsvg-convert`, `magick` (ImageMagick 7), `ktlint`, `jq`, `xmllint`.
+
+| Generated file                                         | Source                           |
+| ------------------------------------------------------ | -------------------------------- |
+| `app/src/main/assets/brand.json`                       | `logo.svg` + `mesh_gradient.svg` |
+| `app/src/main/res/drawable/mesh_gradient.png`          | `mesh_gradient.svg`              |
+| `app/src/main/res/mipmap-*/ic_launcher.png`            | Both (composited)                |
+| `app/src/main/res/mipmap-*/ic_launcher_background.png` | `mesh_gradient.svg`              |
+| `app/src/main/res/mipmap-*/ic_launcher_foreground.png` | `logo.svg` (white, padded)       |
+
+---
+
+## Icons
+
+UI icons are 24x24, stroke style, using `currentColor`. SVG path data is embedded directly in source code. The SVG path parser must support arc commands (A/a).
 
 ### UI Icons
 
