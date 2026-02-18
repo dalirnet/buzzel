@@ -322,6 +322,7 @@ class MainActivity : Activity() {
             statusLine =
                 TextView(context).apply {
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    typeface = Brand.typeface
                     setTextColor(AppColors.secondary)
                     gravity = Gravity.CENTER
                     maxLines = 1
@@ -542,6 +543,7 @@ class MainActivity : Activity() {
                 TextView(ctx).apply {
                     text = "No activity yet"
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    typeface = Brand.typeface
                     setTextColor(AppColors.secondary)
                     gravity = Gravity.CENTER
                     setPadding(0, dp(40), 0, 0)
@@ -632,6 +634,7 @@ class MainActivity : Activity() {
                 TextView(context).apply {
                     text = entry.message
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f) // typo 1.15x: 13 → 15
+                    typeface = Brand.typeface
                     setTextColor(AppColors.text)
                     maxLines = 2
                     ellipsize = TextUtils.TruncateAt.END
@@ -643,6 +646,7 @@ class MainActivity : Activity() {
                     TextView(context).apply {
                         text = entry.error
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f) // typo 1.15x: 11 → 13
+                        typeface = Brand.typeface
                         setTextColor(AppColors.red)
                         maxLines = 1
                         ellipsize = TextUtils.TruncateAt.END
@@ -662,6 +666,7 @@ class MainActivity : Activity() {
                 TextView(context).apply {
                     text = entry.timeString
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f) // typo 1.15x: 11 → 13
+                    typeface = Brand.typeface
                     setTextColor(AppColors.secondary)
                 },
                 wrapWrap(),
@@ -672,8 +677,7 @@ class MainActivity : Activity() {
                         text = if (entry.direction == com.buzzel.model.LogDirection.INCOMING) "IN" else "OUT"
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f) // typo 1.15x: 9 → 10
                         setTextColor(AppColors.secondary)
-                        typeface =
-                            android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                        typeface = Brand.typeface
                     },
                     wrapWrap().apply { topMargin = dp(2) },
                 )

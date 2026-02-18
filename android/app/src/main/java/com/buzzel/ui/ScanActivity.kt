@@ -7,7 +7,6 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.ImageFormat
 import android.graphics.SurfaceTexture
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
@@ -95,7 +94,7 @@ class ScanActivity : Activity() {
                     text = "Point camera at QR code"
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                     setTextColor(Color.WHITE)
-                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    typeface = Brand.typeface
                     gravity = Gravity.CENTER
                 }
             overlay.addView(
@@ -112,7 +111,7 @@ class ScanActivity : Activity() {
                     text = "Cancel"
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                     setTextColor(Color.WHITE)
-                    typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                    typeface = Brand.typeface
                     isAllCaps = false
                     stateListAnimator = null
                     elevation = 0f
@@ -211,7 +210,8 @@ class ScanActivity : Activity() {
                     surface: SurfaceTexture,
                     width: Int,
                     height: Int,
-                ) {}
+                ) {
+                }
 
                 override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
 

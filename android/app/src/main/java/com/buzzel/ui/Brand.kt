@@ -2,6 +2,7 @@ package com.buzzel.ui
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.Typeface
 import org.json.JSONObject
 
 object Brand {
@@ -12,6 +13,9 @@ object Brand {
     var logoViewbox = 512f
         private set
     var logoStrokeWidth = 46f
+        private set
+
+    lateinit var typeface: Typeface
         private set
 
     var splashLogoScale = 0.35f
@@ -26,6 +30,13 @@ object Brand {
     fun load(context: Context) {
         if (loaded) return
         loaded = true
+
+        typeface =
+            try {
+                Typeface.createFromAsset(context.assets, "sofia-sans.ttf")
+            } catch (_: Exception) {
+                Typeface.DEFAULT
+            }
 
         val root =
             JSONObject(

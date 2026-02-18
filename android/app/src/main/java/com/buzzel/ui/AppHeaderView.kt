@@ -1,7 +1,6 @@
 package com.buzzel.ui
 
 import android.content.Context
-import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
@@ -47,7 +46,7 @@ class AppHeaderView(
             TextView(context).apply {
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 19f)
                 setTextColor(AppColors.text)
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                typeface = Brand.typeface
             }
         addView(titleLabel, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
 
@@ -56,6 +55,7 @@ class AppHeaderView(
             TextView(context).apply {
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
                 setTextColor(AppColors.secondary)
+                typeface = Brand.typeface
                 setPadding(dp(10), dp(5), dp(10), dp(5))
                 background =
                     GradientDrawable().apply {
