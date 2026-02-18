@@ -22,12 +22,14 @@
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>LSUIElement</key>
-    <true />
+    <false />
     <key>NSHighResolutionCapable</key>
     <true />
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Buzzel uses Bluetooth to communicate with your Android device</string>
+    <string
+        >Buzzel uses Bluetooth to communicate with your Android device</string>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>Buzzel uses the local network to communicate with your Android device</string>
+    <string
+        >Buzzel uses the local network to communicate with your Android device</string>
 </dict>
 </plist>

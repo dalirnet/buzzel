@@ -6,10 +6,19 @@ import SwiftUI
 @main
 struct BuzzelApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+  @State private var splashFinished = false
+
+  init() {
+    Brand.load()
+  }
 
   var body: some Scene {
     Window("Buzzel", id: "main") {
-      MainView(store: AppStore.shared, transportManager: TransportManager.shared)
+      if splashFinished {
+        MainView(store: AppStore.shared, transportManager: TransportManager.shared)
+      } else {
+        SplashView { splashFinished = true }
+      }
     }
     .windowStyle(.hiddenTitleBar)
     .windowResizability(.contentSize)
@@ -41,6 +50,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
   }
 
+  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+    false
+  }
+
   func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool
   {
     showMainWindow()
@@ -59,8 +72,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       window.styleMask = [.titled, .closable, .miniaturizable]
       window.standardWindowButton(.zoomButton)?.isHidden = true
       window.isMovableByWindowBackground = true
-      window.setContentSize(NSSize(width: 320, height: 480))
-      window.center()
     }
   }
 

@@ -20,19 +20,19 @@ struct OrbitRingsView<Content: View>: View {
   private static var rings: [Ring] {
     [
       Ring(
-        radius: 80, duration: 12,
+        radius: 84, duration: 12,
         dots: [
           OrbitDot(offset: 0.0, size: 6, color: DesignColor.accent),
           OrbitDot(offset: 0.55, size: 4, color: DesignColor.green),
         ]),
       Ring(
-        radius: 105, duration: -18,
+        radius: 110, duration: -18,
         dots: [
           OrbitDot(offset: 0.2, size: 5, color: DesignColor.orange),
           OrbitDot(offset: 0.7, size: 3, color: DesignColor.accent),
         ]),
       Ring(
-        radius: 130, duration: 25,
+        radius: 136, duration: 25,
         dots: [
           OrbitDot(offset: 0.4, size: 4, color: DesignColor.red),
           OrbitDot(offset: 0.85, size: 3, color: DesignColor.green),
@@ -54,7 +54,7 @@ struct OrbitRingsView<Content: View>: View {
         content()
       }
     }
-    .frame(width: 280, height: 280)
+    .frame(width: 294, height: 294)
   }
 
   private func ringView(ring: Ring, elapsed: TimeInterval) -> some View {

@@ -34,7 +34,7 @@ struct MainView: View {
         mainPanel
       }
     }
-    .frame(width: 320, height: 480)
+    .frame(width: 360, height: 640)
     .background(DesignColor.surface)
     .onChange(of: powerState) { state in
       if state == .connected && showQR {
@@ -121,10 +121,10 @@ struct MainView: View {
             PowerButtonView(state: powerState) {
               onPowerButtonTap()
             }
-            .frame(width: 90, height: 90)
+            .frame(width: 94, height: 94)
           }
         }
-        .frame(width: 120, height: 120)
+        .frame(width: 126, height: 126)
       }
 
       Spacer()
