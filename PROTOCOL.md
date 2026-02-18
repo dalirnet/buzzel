@@ -2,7 +2,7 @@
 
 Compact binary protocol for device communication over BLE or WiFi.
 
-- 256-byte frames, 250-byte max command data
+- Dynamic frame size — adapts to transport
 - BLE or WiFi with automatic failover
 - QR-based pairing with seed derivation
 - Reliable delivery — ack, retry, dedup
@@ -42,7 +42,28 @@ Every message is wrapped in a length-prefixed frame:
 └──────────────┴───────────┘
 ```
 
-Max frame: **256 bytes**. Max payload: **254 bytes**.
+Frame size is **dynamic** — determined by the transport.
+
+- **BLE**: `max_frame = negotiated_MTU − 3` (3-byte ATT header)
+- **WiFi**: `max_frame = 4096` (fixed cap)
+
+Derived limits:
+
+```
+max_payload  = max_frame − 2          (frame header)
+max_cmd_data = max_payload − 4        (signal + cmd + seq)
+max_tlv_val  = max_cmd_data − 2       (tag + len)
+```
+
+| MTU  | Max frame | Max command data | Max TLV value |
+| ---- | --------- | ---------------- | ------------- |
+| 23   | 20        | 14               | 12            |
+| 185  | 182       | 176              | 174           |
+| 247  | 244       | 238              | 236           |
+| 512  | 509       | 503              | 501           |
+| WiFi | 4096      | 4090             | 4088          |
+
+Minimum ATT MTU is **23** (BLE default). At this level, session signals (pairing, keepalive, ack) all fit — the protocol works at any MTU. Only command data capacity is reduced on lower MTUs.
 
 ## BLE
 
@@ -52,6 +73,8 @@ Max frame: **256 bytes**. Max payload: **254 bytes**.
 | `0000BF02-0000-1000-8000-00805F9B34FB` | Data characteristic (read/write) |
 
 Phone advertises the GATT service. Computer discovers and connects as central.
+
+On connect, Computer **must** request the highest ATT MTU supported. The negotiated MTU sets the frame limit for the connection (`max_frame = MTU − 3`). All session signals fit at any MTU. Only command data capacity varies.
 
 ## WiFi
 
@@ -67,11 +90,9 @@ preferred → fallback → preferred → fallback → …
 ```
 
 - **10s** timeout per attempt
-- Preferred transport comes from QR `prefer` field
+- Preferred transport from QR `prefer` field
 
 ## Link Events
-
-Reported to the Session layer:
 
 | Event       | Meaning                                 |
 | ----------- | --------------------------------------- |
@@ -112,36 +133,30 @@ IDLE ──► CONNECTING ──► HANDSHAKING ──► ACTIVE
 | `handshaking` | `idle`        | 30s timeout or invalid code                                  |
 | `active`      | `idle`        | `goodbye`, `unpair`, pong timeout, `link.down`               |
 
----
-
 ## Signals
 
 Every frame payload is a **signal**. The first byte identifies it.
-
-### Signal Byte
 
 ```
 [SSSSSSSS]  ← 8 bits: signal ID (0–255)
 ```
 
-### Signal IDs
-
-| ID          | Signal        | Direction        | Payload                      |
-| ----------- | ------------- | ---------------- | ---------------------------- |
-| `0x00`      | command       | both             | cmd(1) + seq(2) + TLV(0–250) |
-| `0x01`      | pair.request  | Phone → Computer | code(6)                      |
-| `0x02`      | pair.response | Computer → Phone | accepted(1) + reason(1)      |
-| `0x03`      | ready         | both             | —                            |
-| `0x04`      | ping          | both             | —                            |
-| `0x05`      | pong          | both             | —                            |
-| `0x06`      | ack           | both             | seq(2)                       |
-| `0x07`      | goodbye       | both             | —                            |
-| `0x08`      | unpair        | both             | —                            |
-| `0x09–0xFF` | reserved      | —                | —                            |
+| ID          | Signal        | Direction        | Payload                    |
+| ----------- | ------------- | ---------------- | -------------------------- |
+| `0x00`      | command       | both             | cmd(1) + seq(2) + TLV(0–N) |
+| `0x01`      | pair.request  | Phone → Computer | code(6)                    |
+| `0x02`      | pair.response | Computer → Phone | accepted(1) + reason(1)    |
+| `0x03`      | ready         | both             | —                          |
+| `0x04`      | ping          | both             | —                          |
+| `0x05`      | pong          | both             | —                          |
+| `0x06`      | ack           | both             | seq(2)                     |
+| `0x07`      | goodbye       | both             | —                          |
+| `0x08`      | unpair        | both             | —                          |
+| `0x09–0xFF` | reserved      | —                | —                          |
 
 ### Payloads
 
-Signals `0x03–0x05`, `0x07–0x08` have **no payload** — just the 1 signal byte.
+Signals `0x03–0x05`, `0x07–0x08` have **no payload** — just the 1-byte signal ID.
 
 **pair.request** — 6 bytes:
 
@@ -164,11 +179,11 @@ Signals `0x03–0x05`, `0x07–0x08` have **no payload** — just the 1 signal b
 
 **command** — 3 + TLV:
 
-| Offset | Field | Size  | Description                |
-| ------ | ----- | ----- | -------------------------- |
-| 0      | cmd   | 1     | Command ID                 |
-| 1–2    | seq   | 2     | Per-sender sequence number |
-| 3+     | data  | 0–250 | TLV pairs                  |
+| Offset | Field | Size | Description                  |
+| ------ | ----- | ---- | ---------------------------- |
+| 0      | cmd   | 1    | Command ID                   |
+| 1–2    | seq   | 2    | Per-sender sequence number   |
+| 3+     | data  | 0–N  | TLV pairs (N = max_cmd_data) |
 
 ### Wire Sizes
 
@@ -181,11 +196,9 @@ Total bytes on wire (frame header + signal byte + payload):
 | pair.request                           | **9**                 |
 | command                                | **6+** (6 + TLV data) |
 
----
-
 ## Keepalive
 
-Signals `0x04` (ping) and `0x05` (pong). Runs only when `active`.
+Runs only in `active` state.
 
 - Both sides send `ping` every **30s**
 - Reply with `pong` immediately
@@ -202,8 +215,6 @@ Phone                          Computer
 │  ... 10s ...                 │
 │  → idle                      │
 ```
-
----
 
 ## Pairing
 
@@ -227,11 +238,11 @@ Generated by Computer. Fixed **24 bytes** (192 bits):
 
 Both sides derive from `seed`:
 
-| Value        | Derivation                                                                                              |
-| ------------ | ------------------------------------------------------------------------------------------------------- |
-| Session ID   | First 16 bytes of `SHA256(seed)` as UUID                                                                |
-| Pairing code | `SHA256(seed + "code")` → treat first 4 bytes as big-endian uint32 → `% 1000000` → zero-pad to 6 digits |
-| Port         | Fixed `48155`                                                                                           |
+| Value        | Derivation                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------- |
+| Session ID   | First 16 bytes of `SHA256(seed)` as UUID                                                          |
+| Pairing code | `SHA256(seed + "code")` → first 4 bytes as big-endian uint32 → `% 1000000` → zero-pad to 6 digits |
+| Port         | Fixed `48155`                                                                                     |
 
 ### Pairing Flow
 
@@ -258,7 +269,7 @@ Computer                               Phone
 
 ### Reconnection
 
-Already-paired devices skip pairing. Both sides send `ready` independently on `link.up` — no ordering, no waiting. First `ready` received → `active`. Seq numbers are **not** reset.
+Already-paired devices skip pairing. Both sides send `ready` on `link.up` — no ordering, no waiting. First `ready` received → `active`. Seq numbers are **not** reset.
 
 ```
 Computer                               Phone
@@ -273,7 +284,7 @@ Computer                               Phone
 
 ### Failover During Active
 
-If the link drops while `active`, session goes to `idle` and failover restarts. On reconnect, both sides exchange `ready` (same as reconnection). Seq numbers are **not** reset — they continue from where they left off.
+If the link drops while `active`, session goes to `idle` and failover restarts. On reconnect, both sides exchange `ready`. Seq numbers continue from where they left off.
 
 ---
 
@@ -284,7 +295,7 @@ If the link drops while `active`, session goes to `idle` and failover restarts. 
 ## Structure
 
 ```
-Frame:   [size 2B][0x00][cmd 1B][seq 2B][TLV data 0–250B]
+Frame:   [size 2B][0x00][cmd 1B][seq 2B][TLV data 0–NB]
           frame    sig   ──── command payload ────────────
 ```
 
@@ -293,23 +304,21 @@ Frame:   [size 2B][0x00][cmd 1B][seq 2B][TLV data 0–250B]
 
 ## TLV Data
 
-Command payload is encoded as Tag-Length-Value pairs:
-
 ```
-[Tag 1B][Len 1B][Value 0–248B]  ...repeated
+[Tag 1B][Len 1B][Value 0–NB]  ...repeated
 ```
 
 - **Tag** — Field identifier from a global registry (1 byte)
-- **Len** — Value size in bytes (1 byte)
+- **Len** — Value size in bytes (1 byte, max 255)
 - **Value** — Raw bytes (UTF-8 for strings, big-endian for integers)
 
-Max value size is 248 bytes (250 byte command data − 2 bytes tag+len overhead).
+Single TLV value max is **255 bytes** (1-byte Len field). A command can carry multiple TLV pairs — total command data is limited by the transport, not by a single entry.
 
-Same tag always means the same thing across all commands.
+Same tag means the same thing across all commands.
 
 ## Reliable Delivery
 
-Every command gets an `ack` signal (`0x06`).
+Every command gets an `ack`.
 
 ```
 Sender                              Receiver
@@ -319,13 +328,12 @@ Sender                              Receiver
   │  ✓                                 │
 ```
 
-**Retry**: 5s timeout → resend same `seq` → 3 failures → `idle`.
-
-**Dedup**: Receiver tracks last `seq`. Same `seq` → skip, re-ack.
+- **Retry**: 5s timeout → resend same `seq` → 3 failures → `idle`
+- **Dedup**: Receiver tracks last `seq`. Same `seq` → skip, re-ack
 
 ## Request / Response
 
-Some commands come in pairs — a request and a separate response command:
+Some commands come in pairs:
 
 ```
 Phone                            Computer
@@ -340,7 +348,7 @@ Phone                            Computer
 │                                │
 ```
 
-Not every command needs a response. Some are one-way — ack confirms delivery, no result expected.
+Not every command needs a response. Some are one-way — ack confirms delivery, no response expected.
 
 ## Command IDs
 
@@ -444,7 +452,7 @@ Phone                                                Computer
 # Known Limitations
 
 - No encryption or authentication beyond pairing
-- No fragmentation — 250-byte command limit
+- No fragmentation — command data limited by transport
 - No pipelining — one command in-flight per sender
 - No error reporting — malformed data silently dropped
 - No versioning — both sides must match
@@ -453,7 +461,7 @@ Phone                                                Computer
 
 # Notes
 
-- All integer fields are big-endian.
-- Signal IDs `0x09–0xFF` are reserved for future use.
-- Command IDs `0x00–0xFF` are reserved until assigned per feature.
-- TLV tags are globally unique — not scoped per command.
+- All integer fields are big-endian
+- Signal IDs `0x09–0xFF` reserved for future use
+- Command IDs `0x00–0xFF` reserved until assigned per feature
+- TLV tags are globally unique — not scoped per command
