@@ -116,6 +116,7 @@ class MainActivity : Activity() {
 
     private var showActivityLog = false
     private var currentStatusText = ""
+    private var lastDarkMode = false
     private var stateListener: ((BuzzelService.ConnectionState) -> Unit)? = null
     private var logListener: ((com.buzzel.model.LogEntry) -> Unit)? = null
 
@@ -126,27 +127,36 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.d(TAG, "Activity created")
+        Brand.load(this)
         AppColors.resolve(this)
+        lastDarkMode = AppColors.isDarkMode(this)
 
         // System bars
         @Suppress("DEPRECATION")
         window.statusBarColor = AppColors.surface
         @Suppress("DEPRECATION")
         window.navigationBarColor = AppColors.surface
-        if (!AppColors.isDarkMode(this)) {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility =
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility =
+            if (AppColors.isDarkMode(this)) {
+                0
+            } else {
                 View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        }
+            }
 
         buildLayout()
         setContentView(rootLayout)
+
         refreshState()
         observeState()
     }
 
     override fun onResume() {
         super.onResume()
+        if (AppColors.isDarkMode(this) != lastDarkMode) {
+            recreate()
+            return
+        }
         refreshState()
     }
 
@@ -662,7 +672,8 @@ class MainActivity : Activity() {
                         text = if (entry.direction == com.buzzel.model.LogDirection.INCOMING) "IN" else "OUT"
                         setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f) // typo 1.15x: 9 → 10
                         setTextColor(AppColors.secondary)
-                        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+                        typeface =
+                            android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
                     },
                     wrapWrap().apply { topMargin = dp(2) },
                 )
