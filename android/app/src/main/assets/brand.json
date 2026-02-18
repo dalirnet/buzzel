@@ -4,14 +4,6 @@
         "viewbox": 512,
         "stroke_width": 46
     },
-    "mesh": {
-        "colors": [
-            "#023E8A",
-            "#0077B6",
-            "#00B4D8",
-            "#48CAE4"
-        ]
-    },
     "splash": {
         "logo_scale": 0.35,
         "logo_color_light": "#DCF5FA",

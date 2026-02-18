@@ -14,9 +14,6 @@ object Brand {
     var logoStrokeWidth = 46f
         private set
 
-    var meshColors = intArrayOf()
-        private set
-
     var splashLogoScale = 0.35f
         private set
     var splashLogoColorLight = Color.WHITE
@@ -44,10 +41,6 @@ object Brand {
         logoViewbox = logo.getDouble("viewbox").toFloat()
         logoStrokeWidth = logo.getDouble("stroke_width").toFloat()
 
-        val mesh = root.getJSONObject("mesh")
-        val colors = mesh.getJSONArray("colors")
-        meshColors = IntArray(colors.length()) { Color.parseColor(colors.getString(it)) }
-
         val splash = root.getJSONObject("splash")
         splashLogoScale = splash.getDouble("logo_scale").toFloat()
         splashLogoColorLight = Color.parseColor(splash.getString("logo_color_light"))
@@ -55,7 +48,12 @@ object Brand {
     }
 
     private fun reversePath(d: String): String {
-        val tokens = d.replace(",", " ").replace(Regex("([A-Za-z])"), " $1 ").trim().split("\\s+".toRegex())
+        val tokens =
+            d
+                .replace(",", " ")
+                .replace(Regex("([A-Za-z])"), " $1 ")
+                .trim()
+                .split("\\s+".toRegex())
         var i = 0
 
         if (tokens[i] == "M") i++
