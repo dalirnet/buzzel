@@ -2,38 +2,28 @@
 #
 # Generate macOS app icon, splash assets, and brand.json from source SVGs.
 #
-# Usage:  sh prepare.sh [--color COLOR] [--padding PADDING]
+# Usage:  sh prepare.sh
 # Requires: rsvg-convert, magick, iconutil
 #
-# Input  (../assets/):  logo.svg, mesh-gradient.svg, brand.json, sofia-sans.ttf
+# Input  (../assets/):  logo.svg, mesh.svg, sofia-sans.ttf
 # Output:
 #   Resources/AppIcon.icns       — macOS app icon
 #   Resources/Brand.json         — runtime brand config
-#   Resources/MeshGradient.png   — splash background
+#   Resources/Mesh.png            — splash background
 #   Resources/SofiaSans.ttf      — custom font
 
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# --- Defaults ---
+# --- Constants ---
 
-COLOR="#FFFFFF"
-PADDING=22
-
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --color)   COLOR="$2"; shift 2 ;;
-        --padding) PADDING="$2"; shift 2 ;;
-        *) echo "Unknown option: $1"; exit 1 ;;
-    esac
-done
+PADDING=225
 
 # --- Paths ---
 
 ASSETS="../assets"
 LOGO="$ASSETS/logo.svg"
-MESH="$ASSETS/mesh-gradient.svg"
-BRAND="$ASSETS/brand.json"
+MESH="$ASSETS/mesh.svg"
 TMP=$(mktemp -d /tmp/macos_prepare_XXXXXX)
 trap 'rm -rf "$TMP"' EXIT
 
@@ -42,7 +32,7 @@ trap 'rm -rf "$TMP"' EXIT
 for cmd in rsvg-convert magick iconutil; do
     command -v "$cmd" &>/dev/null || { echo "Error: $cmd required."; exit 1; }
 done
-for f in "$LOGO" "$MESH" "$BRAND"; do
+for f in "$LOGO" "$MESH"; do
     [ -f "$f" ] || { echo "Error: $f not found."; exit 1; }
 done
 
@@ -50,18 +40,11 @@ done
 
 echo "Extracting brand data..."
 
-SPLASH_SCALE=$(sed -n 's/.*"logo_scale"[[:space:]]*:[[:space:]]*\([0-9.]*\).*/\1/p' "$BRAND")
-SPLASH_LIGHT=$(sed -n 's/.*"logo_color_light"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BRAND")
-SPLASH_DARK=$(sed -n 's/.*"logo_color_dark"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$BRAND")
-
-PATH_D=$(sed -n 's/.*d="\([^"]*\)".*/\1/p' "$LOGO")
+PATH_D=$(sed -n 's/.*d="\([^"]*\)".*/\1/p' "$LOGO" | tr '\n' ' ' | sed 's/  */ /g; s/ *$//')
 [ -z "$PATH_D" ] && { echo "Error: no path in logo.svg"; exit 1; }
 
 VB=$(sed -n 's/.*viewBox="[0-9]* [0-9]* \([0-9]*\) [0-9]*".*/\1/p' "$LOGO")
 VB=${VB:-512}
-
-SW=$(sed -n 's/.*stroke-width="\([^"]*\)".*/\1/p' "$LOGO")
-SW=${SW:-46}
 
 # --- 2. Generate Brand.json + copy font ---
 
@@ -70,13 +53,7 @@ cat > Resources/Brand.json <<EOF
 {
     "logo": {
         "path": "$PATH_D",
-        "viewbox": $VB,
-        "stroke_width": $SW
-    },
-    "splash": {
-        "logo_scale": $SPLASH_SCALE,
-        "logo_color_light": "$SPLASH_LIGHT",
-        "logo_color_dark": "$SPLASH_DARK"
+        "viewbox": $VB
     }
 }
 EOF
@@ -86,14 +63,16 @@ cp "$ASSETS/sofia-sans.ttf" Resources/SofiaSans.ttf
 
 echo "Rendering mesh gradient..."
 rsvg-convert -w 1024 -h 1024 "$MESH" -o "$TMP/mesh.png"
-rsvg-convert -w 1080 -h 1920 "$MESH" -o Resources/MeshGradient.png
+rsvg-convert -w 1080 -h 1920 "$MESH" -o Resources/Mesh.png
 
 # --- 4. Recolored logo SVG ---
 
 PVB=$((VB + PADDING * 2))
 sed \
     -e "s/viewBox=\"[^\"]*\"/viewBox=\"-${PADDING} -${PADDING} ${PVB} ${PVB}\"/" \
-    -e "s/stroke=\"[^\"]*\"/stroke=\"${COLOR}\"/" \
+    -e "s/width=\"[^\"]*\"/width=\"${PVB}\"/" \
+    -e "s/height=\"[^\"]*\"/height=\"${PVB}\"/" \
+    -e "s/<path /<path fill=\"#FFFFFF\" /g" \
     "$LOGO" > "$TMP/logo.svg"
 
 # --- 5. Generate app icon ---
