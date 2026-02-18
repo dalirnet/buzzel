@@ -5,11 +5,12 @@
 # Usage:  sh prepare.sh [--color COLOR] [--padding PADDING]
 # Requires: rsvg-convert, magick, iconutil
 #
-# Input  (../assets/):  logo.svg, mesh-gradient.svg, brand.json
+# Input  (../assets/):  logo.svg, mesh-gradient.svg, brand.json, sofia-sans.ttf
 # Output:
 #   Resources/AppIcon.icns       — macOS app icon
 #   Resources/Brand.json         — runtime brand config
 #   Resources/MeshGradient.png   — splash background
+#   Resources/SofiaSans.ttf      — custom font
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -62,7 +63,7 @@ VB=${VB:-512}
 SW=$(sed -n 's/.*stroke-width="\([^"]*\)".*/\1/p' "$LOGO")
 SW=${SW:-46}
 
-# --- 2. Generate Brand.json ---
+# --- 2. Generate Brand.json + copy font ---
 
 echo "Generating Brand.json..."
 cat > Resources/Brand.json <<EOF
@@ -79,6 +80,7 @@ cat > Resources/Brand.json <<EOF
     }
 }
 EOF
+cp "$ASSETS/sofia-sans.ttf" Resources/SofiaSans.ttf
 
 # --- 3. Render mesh gradient ---
 

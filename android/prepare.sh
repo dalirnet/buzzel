@@ -5,9 +5,10 @@
 # Usage:  sh prepare.sh [--color COLOR] [--padding PADDING]
 # Requires: rsvg-convert, magick (ImageMagick 7)
 #
-# Input  (../assets/):  logo.svg, mesh-gradient.svg, brand.json
+# Input  (../assets/):  logo.svg, mesh-gradient.svg, brand.json, sofia-sans.ttf
 # Output:
 #   app/src/main/assets/brand.json              — runtime brand config
+#   app/src/main/assets/sofia-sans.ttf          — custom font
 #   app/src/main/res/drawable/mesh_gradient.png — splash background
 #   app/src/main/res/mipmap-*/ic_launcher*.png  — app icons (legacy + adaptive)
 
@@ -64,10 +65,11 @@ VB=${VB:-512}
 SW=$(sed -n 's/.*stroke-width="\([^"]*\)".*/\1/p' "$LOGO")
 SW=${SW:-46}
 
-# --- 2. Generate brand.json ---
+# --- 2. Generate brand.json + copy font ---
 
 echo "Generating brand.json..."
 mkdir -p "$OUT"
+cp "$ASSETS/sofia-sans.ttf" "$OUT/sofia-sans.ttf"
 cat > "$OUT/brand.json" <<EOF
 {
   "logo": {
