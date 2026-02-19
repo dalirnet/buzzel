@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 # --- Constants ---
 
-PADDING=500
+PADDING=450
 
 # --- Paths ---
 
@@ -81,6 +81,26 @@ sed \
 # --- 5. Adaptive icons ---
 
 echo "Generating icons..."
+mkdir -p "$RES/mipmap-mdpi" "$RES/mipmap-hdpi" "$RES/mipmap-xhdpi" "$RES/mipmap-xxhdpi" "$RES/mipmap-xxxhdpi"
+mkdir -p "$RES/mipmap-anydpi-v26"
+
+# Generate adaptive icon XML
+cat > "$RES/mipmap-anydpi-v26/ic_launcher.xml" <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>
+XML
+
+cat > "$RES/mipmap-anydpi-v26/ic_launcher_round.xml" <<'XML'
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@mipmap/ic_launcher_background"/>
+    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+</adaptive-icon>
+XML
+
 for pair in mdpi:108 hdpi:162 xhdpi:216 xxhdpi:324 xxxhdpi:432; do
     d="${pair%%:*}"; s="${pair##*:}"
     magick "$TMP/mesh.png" -resize "${s}x${s}!" "$RES/mipmap-$d/ic_launcher_background.png"

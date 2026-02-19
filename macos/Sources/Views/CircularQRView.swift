@@ -16,7 +16,7 @@ struct CircularQRView: View {
     let center = size / 2
     let radius = size / 2
     let centerRadius = size * centerRatio / 2
-    let logoSize = size * centerRatio * 0.6
+    let logoSize = size * centerRatio * 0.45
 
     return AnyView(
       ZStack {
