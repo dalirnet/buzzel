@@ -6,16 +6,33 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.ImageFormat
+import android.graphics.Outline
+import android.graphics.Rect
+import android.graphics.SurfaceTexture
 import android.graphics.drawable.GradientDrawable
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.params.MeteringRectangle
+import android.media.ImageReader
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.Looper
 import android.text.TextUtils
 import android.util.Log
+import android.util.Size
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
+import android.view.Surface
+import android.view.TextureView
 import android.view.View
+import android.view.ViewOutlineProvider
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -25,14 +42,15 @@ import androidx.core.content.ContextCompat
 import com.buzzel.BuzzelApp
 import com.buzzel.protocol.Protocol
 import com.buzzel.service.BuzzelService
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
 
 class MainActivity : Activity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val PERMISSION_REQUEST = 1001
-        private const val SCAN_QR_REQUEST = 1002
 
-        // undo-left icon paths
         private val ICON_BACK =
             arrayOf(
                 arrayOf(
@@ -40,7 +58,6 @@ class MainActivity : Activity() {
                 ),
             )
 
-        // qr-code icon paths: first 3 groups = stroke, rest = fill
         private val ICON_QR =
             arrayOf(
                 arrayOf(
@@ -115,10 +132,30 @@ class MainActivity : Activity() {
     private lateinit var mainPanel: LinearLayout
 
     private var showActivityLog = false
+    private var scanMode = false
     private var currentStatusText = ""
     private var lastDarkMode = false
     private var stateListener: ((BuzzelService.ConnectionState) -> Unit)? = null
     private var logListener: ((com.buzzel.model.LogEntry) -> Unit)? = null
+
+    // Camera / QR scanning
+    private lateinit var cameraTextureView: TextureView
+    private lateinit var cameraFrame: FrameLayout
+    private lateinit var contentFrame: FrameLayout
+    private var cameraDevice: CameraDevice? = null
+    private var captureSession: CameraCaptureSession? = null
+    private var previewRequest: CaptureRequest.Builder? = null
+    private var sensorArraySize: Rect? = null
+    private var imageReader: ImageReader? = null
+    private var bgThread: HandlerThread? = null
+    private var bgHandler: Handler? = null
+    private var scannerInitialized = false
+    private val scanner by lazy {
+        scannerInitialized = true
+        BarcodeScanning.getClient()
+    }
+
+    @Volatile private var scanning = false
 
     private fun dp(value: Int) = dp(this as Context, value)
 
@@ -165,6 +202,8 @@ class MainActivity : Activity() {
         logListener?.let { app.removeLogEntryListener(it) }
         stateListener = null
         logListener = null
+        stopCamera()
+        if (scannerInitialized) scanner.close()
         super.onDestroy()
     }
 
@@ -177,21 +216,12 @@ class MainActivity : Activity() {
         if (requestCode == PERMISSION_REQUEST) refreshState()
     }
 
-    @Suppress("DEPRECATION")
-    override fun onActivityResult(
-        requestCode: Int,
-        resultCode: Int,
-        data: Intent?,
-    ) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == SCAN_QR_REQUEST && resultCode == RESULT_OK) {
-            val qrBytes = data?.getByteArrayExtra(ScanActivity.RESULT_QR_BYTES) ?: return
-            handleQrResult(qrBytes)
-        }
-    }
-
     @Deprecated("Use onBackPressedDispatcher")
     override fun onBackPressed() {
+        if (scanMode) {
+            exitScanMode()
+            return
+        }
         if (showActivityLog) {
             showMainView()
             return
@@ -283,8 +313,8 @@ class MainActivity : Activity() {
             // Orbit rings with power button inside
             orbitRings = OrbitRingsView(context)
             powerButton = PowerButtonView(context)
-            val btnSize = dp(112) // 90pt * 1.25 scale
-            val contentFrame =
+            val btnSize = dp(112)
+            contentFrame =
                 FrameLayout(context).apply {
                     clipChildren = false
                     clipToPadding = false
@@ -294,16 +324,55 @@ class MainActivity : Activity() {
             orbitRings.clipToPadding = false
             orbitRings.addView(
                 contentFrame,
+                FrameLayout.LayoutParams(dp(150), dp(150), Gravity.CENTER),
+            )
+
+            // Camera preview overlay — circular FrameLayout on top of orbit rings, same size
+            cameraTextureView = TextureView(context)
+            cameraFrame =
+                FrameLayout(context).apply {
+                    visibility = View.GONE
+                    outlineProvider =
+                        object : ViewOutlineProvider() {
+                            override fun getOutline(
+                                view: View,
+                                outline: Outline,
+                            ) {
+                                outline.setOval(0, 0, view.width, view.height)
+                            }
+                        }
+                    clipToOutline = true
+                }
+            cameraFrame.addView(
+                cameraTextureView,
                 FrameLayout.LayoutParams(
-                    dp(150),
-                    dp(150),
-                    Gravity.CENTER, // 120pt * 1.25
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT,
                 ),
             )
-            addView(
+            cameraFrame.setOnTouchListener { v, event ->
+                if (event.action == MotionEvent.ACTION_UP) {
+                    triggerFocus(event.x / v.width.toFloat(), event.y / v.height.toFloat())
+                }
+                true
+            }
+
+            val orbitFrame =
+                FrameLayout(context).apply {
+                    clipChildren = false
+                    clipToPadding = false
+                }
+            orbitFrame.addView(
                 orbitRings,
+                FrameLayout.LayoutParams(dp(350), dp(350), Gravity.CENTER),
+            )
+            orbitFrame.addView(
+                cameraFrame,
+                FrameLayout.LayoutParams(dp(350), dp(350), Gravity.CENTER),
+            )
+            addView(
+                orbitFrame,
                 LinearLayout.LayoutParams(dp(350), dp(350)).apply {
-                    // 280pt * 1.25
                     gravity = Gravity.CENTER_HORIZONTAL
                 },
             )
@@ -367,17 +436,21 @@ class MainActivity : Activity() {
         powerButton.onTap = { onPowerButtonTap(state) }
 
         // Header
-        val title = if (showActivityLog) "Activity Log" else "Buzzel"
+        val title =
+            when {
+                showActivityLog -> "Activity Log"
+                scanMode -> "Scan QR Code"
+                else -> "Buzzel"
+            }
         headerView.setTitle(title)
 
         // Badge
         val connected = state == PowerButtonState.CONNECTED
-        val badgeText = if (!showActivityLog && connected) app.connectedDeviceName else null
+        val badgeText = if (!showActivityLog && !scanMode && connected) app.connectedDeviceName else null
         headerView.setBadge(badgeText)
 
         // Trailing icon
-        val isSubView = showActivityLog
-        if (isSubView) {
+        if (showActivityLog || scanMode) {
             headerView.setTrailingIcon(ICON_BACK, SVGIconView.IconMode.STROKE, AppColors.text)
             headerView.setTrailingIconEnabled(true)
         } else {
@@ -491,10 +564,10 @@ class MainActivity : Activity() {
     // --- Navigation ---
 
     private fun onTrailingIconTap() {
-        if (showActivityLog) {
-            showMainView()
-        } else {
-            openScanner()
+        when {
+            showActivityLog -> showMainView()
+            scanMode -> exitScanMode()
+            else -> enterScanMode()
         }
     }
 
@@ -562,7 +635,7 @@ class MainActivity : Activity() {
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 1,
                             ).apply { marginStart = dp(35) },
-                    ) // layout 1.25x
+                    )
                 }
             }
         }
@@ -593,7 +666,7 @@ class MainActivity : Activity() {
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 1,
                             ).apply { marginStart = dp(35) },
-                    ) // layout 1.25x
+                    )
                 }
                 entries.addView(buildLogEntryRow(entry), 0)
             }
@@ -606,10 +679,10 @@ class MainActivity : Activity() {
     private fun buildLogEntryRow(entry: com.buzzel.model.LogEntry): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(20), dp(10), dp(20), dp(10)) // layout 1.25x: 16×8 → 20×10
+            setPadding(dp(20), dp(10), dp(20), dp(10))
             gravity = Gravity.TOP
 
-            // Status dot (detail 1.0x: stays 8dp)
+            // Status dot
             val dot =
                 View(context).apply {
                     val dotColor =
@@ -624,7 +697,7 @@ class MainActivity : Activity() {
                 dot,
                 LinearLayout.LayoutParams(dp(8), dp(8)).apply {
                     topMargin = dp(6)
-                    marginEnd = dp(10) // layout 1.25x: 8 → 10
+                    marginEnd = dp(10)
                 },
             )
 
@@ -633,7 +706,7 @@ class MainActivity : Activity() {
             center.addView(
                 TextView(context).apply {
                     text = entry.message
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f) // typo 1.15x: 13 → 15
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
                     typeface = Brand.typeface
                     setTextColor(AppColors.text)
                     maxLines = 2
@@ -645,7 +718,7 @@ class MainActivity : Activity() {
                 center.addView(
                     TextView(context).apply {
                         text = entry.error
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f) // typo 1.15x: 11 → 13
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                         typeface = Brand.typeface
                         setTextColor(AppColors.red)
                         maxLines = 1
@@ -665,7 +738,7 @@ class MainActivity : Activity() {
             right.addView(
                 TextView(context).apply {
                     text = entry.timeString
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f) // typo 1.15x: 11 → 13
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                     typeface = Brand.typeface
                     setTextColor(AppColors.secondary)
                 },
@@ -675,7 +748,7 @@ class MainActivity : Activity() {
                 right.addView(
                     TextView(context).apply {
                         text = if (entry.direction == com.buzzel.model.LogDirection.INCOMING) "IN" else "OUT"
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f) // typo 1.15x: 9 → 10
+                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
                         setTextColor(AppColors.secondary)
                         typeface = Brand.typeface
                     },
@@ -689,7 +762,7 @@ class MainActivity : Activity() {
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                     ).apply { marginStart = dp(10) },
-            ) // layout 1.25x: 8 → 10
+            )
         }
 
     // --- Actions ---
@@ -723,9 +796,258 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun openScanner() {
-        @Suppress("DEPRECATION")
-        startActivityForResult(Intent(this, ScanActivity::class.java), SCAN_QR_REQUEST)
+    // --- Scan mode ---
+
+    private fun enterScanMode() {
+        scanMode = true
+        scanning = true
+        cameraFrame.visibility = View.VISIBLE
+        refreshState()
+        startCamera()
+    }
+
+    private fun exitScanMode() {
+        scanMode = false
+        scanning = false
+        stopCamera()
+        cameraFrame.visibility = View.GONE
+        refreshState()
+    }
+
+    private fun startCamera() {
+        bgThread = HandlerThread("CameraBackground").also { it.start() }
+        bgHandler = Handler(bgThread!!.looper)
+
+        cameraTextureView.surfaceTextureListener =
+            object : TextureView.SurfaceTextureListener {
+                override fun onSurfaceTextureAvailable(
+                    surface: SurfaceTexture,
+                    width: Int,
+                    height: Int,
+                ) {
+                    openCamera()
+                }
+
+                override fun onSurfaceTextureSizeChanged(
+                    surface: SurfaceTexture,
+                    width: Int,
+                    height: Int,
+                ) {}
+
+                override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean = true
+
+                override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+            }
+        if (cameraTextureView.isAvailable) openCamera()
+    }
+
+    private fun openCamera() {
+        val manager = getSystemService(CAMERA_SERVICE) as CameraManager
+        try {
+            val cameraId =
+                manager.cameraIdList.firstOrNull { id ->
+                    manager.getCameraCharacteristics(id).get(CameraCharacteristics.LENS_FACING) ==
+                        CameraCharacteristics.LENS_FACING_BACK
+                } ?: manager.cameraIdList.firstOrNull() ?: return
+
+            val characteristics = manager.getCameraCharacteristics(cameraId)
+            val sensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+            sensorArraySize = characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return
+            val previewSize =
+                map
+                    .getOutputSizes(SurfaceTexture::class.java)
+                    ?.filter { it.width <= 1920 && it.height <= 1080 }
+                    ?.maxByOrNull { it.width * it.height }
+                    ?: Size(1280, 720)
+
+            imageReader = ImageReader.newInstance(previewSize.width, previewSize.height, ImageFormat.YUV_420_888, 2)
+            imageReader!!.setOnImageAvailableListener({ reader ->
+                val image =
+                    try {
+                        reader.acquireLatestImage()
+                    } catch (_: Exception) {
+                        null
+                    }
+                        ?: return@setOnImageAvailableListener
+                if (!scanning) {
+                    image.close()
+                    return@setOnImageAvailableListener
+                }
+                try {
+                    val inputImage = InputImage.fromMediaImage(image, sensorOrientation)
+                    scanner
+                        .process(inputImage)
+                        .addOnSuccessListener { handleBarcodes(it) }
+                        .addOnFailureListener { image.close() }
+                        .addOnCompleteListener { image.close() }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error processing image", e)
+                    image.close()
+                }
+            }, bgHandler)
+
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
+
+            manager.openCamera(
+                cameraId,
+                object : CameraDevice.StateCallback() {
+                    override fun onOpened(camera: CameraDevice) {
+                        cameraDevice = camera
+                        createPreviewSession(camera, previewSize, sensorOrientation)
+                    }
+
+                    override fun onDisconnected(camera: CameraDevice) {
+                        camera.close()
+                    }
+
+                    override fun onError(
+                        camera: CameraDevice,
+                        error: Int,
+                    ) {
+                        camera.close()
+                    }
+                },
+                bgHandler,
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to open camera", e)
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun createPreviewSession(
+        camera: CameraDevice,
+        size: Size,
+        sensorOrientation: Int,
+    ) {
+        try {
+            val texture = cameraTextureView.surfaceTexture ?: return
+            texture.setDefaultBufferSize(size.width, size.height)
+
+            // Center-crop the preview to fill the square TextureView
+            handler.post { applyPreviewTransform(size, sensorOrientation) }
+
+            val previewSurface = Surface(texture)
+            val readerSurface = imageReader!!.surface
+            val request =
+                camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW).apply {
+                    addTarget(previewSurface)
+                    addTarget(readerSurface)
+                    set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                }
+            previewRequest = request
+            camera.createCaptureSession(
+                listOf(previewSurface, readerSurface),
+                object : CameraCaptureSession.StateCallback() {
+                    override fun onConfigured(session: CameraCaptureSession) {
+                        captureSession = session
+                        session.setRepeatingRequest(request.build(), null, bgHandler)
+                    }
+
+                    override fun onConfigureFailed(session: CameraCaptureSession) {}
+                },
+                bgHandler,
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create preview session", e)
+        }
+    }
+
+    private fun applyPreviewTransform(
+        previewSize: Size,
+        sensorOrientation: Int,
+    ) {
+        val viewW = cameraTextureView.width.toFloat()
+        val viewH = cameraTextureView.height.toFloat()
+        if (viewW == 0f || viewH == 0f) return
+
+        // Stream is landscape (e.g. 1280x720), view is square.
+        // After 90° sensor rotation the effective dims are swapped.
+        val streamW = previewSize.width.toFloat()
+        val streamH = previewSize.height.toFloat()
+
+        val scaleX = viewW / streamH // rotated 90°
+        val scaleY = viewH / streamW
+        val scale = maxOf(scaleX, scaleY)
+
+        val matrix = android.graphics.Matrix()
+        matrix.setScale(scale * streamH / viewW, scale * streamW / viewH, viewW / 2f, viewH / 2f)
+        cameraTextureView.setTransform(matrix)
+    }
+
+    private fun handleBarcodes(barcodes: List<Barcode>) {
+        if (!scanning) return
+        for (barcode in barcodes) {
+            if (barcode.format != Barcode.FORMAT_QR_CODE) continue
+            // rawBytes may be null for binary QR on some ML Kit versions; fall back to ISO-8859-1
+            val raw =
+                barcode.rawBytes
+                    ?: barcode.rawValue?.toByteArray(Charsets.ISO_8859_1)
+                    ?: continue
+            if (Protocol.parseQr(raw) == null) continue
+            scanning = false
+            runOnUiThread {
+                exitScanMode()
+                handleQrResult(raw)
+            }
+            return
+        }
+    }
+
+    private fun triggerFocus(nx: Float, ny: Float) {
+        val session = captureSession ?: return
+        val request = previewRequest ?: return
+        val sensor = sensorArraySize ?: return
+
+        val halfSize = 150
+        val cx = (nx * sensor.width()).toInt().coerceIn(halfSize, sensor.width() - halfSize)
+        val cy = (ny * sensor.height()).toInt().coerceIn(halfSize, sensor.height() - halfSize)
+        val focusRect = MeteringRectangle(
+            cx - halfSize, cy - halfSize,
+            halfSize * 2, halfSize * 2,
+            MeteringRectangle.METERING_WEIGHT_MAX
+        )
+
+        try {
+            // Cancel any ongoing AF first
+            request.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL)
+            session.capture(request.build(), null, bgHandler)
+
+            // Set metering region and trigger AF
+            request.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
+            request.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(focusRect))
+            request.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START)
+            session.capture(request.build(), null, bgHandler)
+
+            // Resume continuous AF after focus locks
+            handler.postDelayed({
+                request.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
+                request.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                try { session.setRepeatingRequest(request.build(), null, bgHandler) } catch (_: Exception) {}
+            }, 2000)
+        } catch (e: Exception) {
+            Log.e(TAG, "Focus trigger failed", e)
+        }
+    }
+
+    private fun stopCamera() {
+        scanning = false
+        try {
+            captureSession?.close()
+            cameraDevice?.close()
+            imageReader?.close()
+            bgThread?.quitSafely()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping camera", e)
+        }
+        captureSession = null
+        cameraDevice = null
+        imageReader = null
+        previewRequest = null
+        sensorArraySize = null
+        bgThread = null
+        bgHandler = null
     }
 
     // --- Helpers ---
