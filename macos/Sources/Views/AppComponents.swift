@@ -79,6 +79,7 @@ struct SVGIconView: View {
 
 struct WaveBLogoView: View {
   let size: CGFloat
+  var color: Color = DesignColor.text
 
   var body: some View {
     let raw = parseSVGPath(Brand.logoPath)
@@ -92,7 +93,7 @@ struct WaveBLogoView: View {
           CGAffineTransform(scaleX: scale, y: scale)
             .concatenating(CGAffineTransform(translationX: ox, y: oy))))
     }
-    .fill(DesignColor.text)
+    .fill(color)
     .frame(width: size, height: size)
   }
 }

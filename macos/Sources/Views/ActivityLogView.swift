@@ -5,13 +5,18 @@ struct ActivityLogView: View {
 
   var body: some View {
     if transportManager.logEntries.isEmpty {
-      VStack {
+      VStack(spacing: 12) {
         Spacer()
+        WaveBLogoView(size: 32, color: DesignColor.secondary.opacity(0.3))
         Text("No activity yet")
-          .font(Brand.font(size: 13))
+          .font(Brand.font(size: 14))
           .foregroundColor(DesignColor.secondary)
+        Text("Events will appear here")
+          .font(Brand.font(size: 12))
+          .foregroundColor(DesignColor.secondary.opacity(0.6))
         Spacer()
       }
+      .frame(maxWidth: .infinity)
     } else {
       ScrollView {
         LazyVStack(spacing: 0) {

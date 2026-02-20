@@ -10,6 +10,7 @@ import kotlin.math.min
 
 class WaveBLogoView(
     context: Context,
+    private var logoColor: Int = AppColors.text,
 ) : View(context) {
     private val paint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -21,7 +22,7 @@ class WaveBLogoView(
         val size = min(width, height).toFloat()
         val scale = size / Brand.logoViewbox
 
-        paint.color = AppColors.text
+        paint.color = logoColor
 
         val path = PathParser.createPathFromPathData(Brand.logoPath)
         path.transform(Matrix().apply { postScale(scale, scale) })
