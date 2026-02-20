@@ -1,10 +1,13 @@
 package com.buzzel.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.buzzel.BuzzelApp
 import com.buzzel.service.BuzzelService
 
 enum class PowerButtonState {
-    NO_PERMISSION,
+    RESTRICTED,
     UNPAIRED,
     CONNECTING,
     CONNECTED,
@@ -13,14 +16,21 @@ enum class PowerButtonState {
 
     companion object {
         fun current(app: BuzzelApp): PowerButtonState {
-            val hasPairing = app.configStore.sessionId != null
-            val serviceState = app.serviceConnectionState
+            val btGranted =
+                ContextCompat.checkSelfPermission(
+                    app,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                ) == PackageManager.PERMISSION_GRANTED
+            if (!btGranted) return RESTRICTED
 
-            if (!hasPairing) return UNPAIRED
+            // UNPAIRED = no QR scanned yet (no pairing code stored)
+            val hasQr = app.configStore.pairingCode != null
+            if (!hasQr) return UNPAIRED
 
-            return when (serviceState) {
+            return when (app.serviceConnectionState) {
                 BuzzelService.ConnectionState.ACTIVE -> CONNECTED
-                else -> if (app.hasBeenConnected) DISCONNECTED else CONNECTING
+                BuzzelService.ConnectionState.IDLE -> DISCONNECTED
+                else -> CONNECTING
             }
         }
     }

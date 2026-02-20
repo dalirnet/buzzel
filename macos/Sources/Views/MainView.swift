@@ -8,6 +8,7 @@ struct MainView: View {
 
   @State private var showQR = false
   @State private var showActivityLog = false
+  @State private var showBluetoothOffAlert = false
   @State private var qrMatrix: [[Bool]]?
   @State private var pairingCode = ""
   @State private var sessionId = ""
@@ -41,13 +42,27 @@ struct MainView: View {
         closeQR()
       }
     }
+    .onChange(of: transportManager.bluetoothPoweredOff) { isPoweredOff in
+      if isPoweredOff && transportManager.bleAuthorized {
+        showBluetoothOffAlert = true
+      }
+    }
+    .alert("Bluetooth is Off", isPresented: $showBluetoothOffAlert) {
+      Button("Open Settings") {
+        NSWorkspace.shared.open(
+          URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings")!)
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Turn on Bluetooth in System Settings to use Buzzel.")
+    }
   }
 
   // MARK: - Header
 
   private var headerTitle: String {
     if showActivityLog { return "Activity Log" }
-    if showQR { return "QR Code" }
+    if showQR { return "Quick Setup" }
     return "Buzzel"
   }
 
@@ -85,13 +100,13 @@ struct MainView: View {
           size: 20,
           color: isSubView ? DesignColor.text : DesignColor.accent,
           mode: isSubView ? .stroke(width: 1.5) : .mixed,
-          opacity: (!isSubView && (powerState == .connected || powerState == .noPermission))
+          opacity: (!isSubView && (powerState == .connected || powerState == .restricted))
             ? 0.3 : 1.0
         )
         .contentShape(Rectangle())
       }
       .buttonStyle(.plain)
-      .disabled(!isSubView && (powerState == .connected || powerState == .noPermission))
+      .disabled(!isSubView && (powerState == .connected || powerState == .restricted))
       .onHover { inside in
         if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
       }
@@ -162,26 +177,22 @@ struct MainView: View {
       } else if transportManager.isPairing {
         return "Waiting for device to connect"
       } else {
-        return "Scan QR code with your phone"
+        return "Scan QR code with Android"
       }
     }
     switch powerState {
-    case .noPermission:
-      return "Tap to grant Bluetooth access"
+    case .restricted:
+      return "Bluetooth access is required"
     case .unpaired:
-      return "No device paired yet"
+      return "No device paired"
     case .connecting:
-      return "Looking for your device"
+      let via = transportManager.connectingTransport
+      return via.isEmpty ? "Searching for device" : "Searching via \(via)"
     case .connected:
-      if let last = transportManager.logEntries.last {
-        return "\(last.message) · \(last.timeString)"
-      }
-      return "Connected and ready"
+      let via = transportManager.activeTransport
+      return via.isEmpty ? "Connected" : "Connected via \(via)"
     case .disconnected:
-      if let last = transportManager.logEntries.last {
-        return "\(last.message) · \(last.timeString)"
-      }
-      return "Tap to reconnect"
+      return transportManager.hasBeenConnected ? "Connection lost" : "Ready to connect"
     }
   }
 
@@ -198,11 +209,9 @@ struct MainView: View {
       .contentShape(Capsule())
       .rotation3DEffect(.degrees(statusFlipAngle), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
       .onHover { inside in
-        guard powerState == .connected else { return }
         if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
       }
       .onTapGesture {
-        guard powerState == .connected else { return }
         withAnimation(.easeInOut(duration: 0.2)) { showActivityLog = true }
       }
       .onAppear { displayedStatusText = statusText }
@@ -250,10 +259,12 @@ struct MainView: View {
 
   private func onPowerButtonTap() {
     switch powerState {
-    case .noPermission:
+    case .restricted:
       transportManager.ble.requestAccess()
-    case .unpaired, .connecting:
-      break
+    case .unpaired:
+      openQR()
+    case .connecting:
+      transportManager.stop()
     case .connected:
       transportManager.stop()
     case .disconnected:

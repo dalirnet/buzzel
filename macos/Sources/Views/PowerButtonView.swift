@@ -95,7 +95,7 @@ struct PowerButtonView: View {
   private var iconView: some View {
     let icon: ShieldIcon = {
       switch state {
-      case .noPermission: return .warning
+      case .restricted: return .warning
       case .unpaired: return .keyhole
       case .connecting: return .up
       case .connected: return .check
@@ -125,7 +125,7 @@ struct PowerButtonView: View {
 
   private var stateColor: Color {
     switch state {
-    case .noPermission: return DesignColor.mutedYellow
+    case .restricted: return DesignColor.mutedYellow
     case .unpaired: return DesignColor.mutedGray
     case .connecting: return DesignColor.mutedOrange
     case .connected: return DesignColor.mutedGreen

@@ -71,7 +71,7 @@ class PowerButtonView(
 
     private fun stateColor(s: PowerButtonState): Int =
         when (s) {
-            PowerButtonState.NO_PERMISSION -> AppColors.mutedYellow
+            PowerButtonState.RESTRICTED -> AppColors.mutedYellow
             PowerButtonState.UNPAIRED -> AppColors.mutedGray
             PowerButtonState.CONNECTING -> AppColors.mutedOrange
             PowerButtonState.CONNECTED -> AppColors.mutedGreen
@@ -270,7 +270,7 @@ class PowerButtonView(
         canvas.drawPath(shieldPath, shieldStrokePaint)
 
         when (state) {
-            PowerButtonState.NO_PERMISSION -> drawWarning(canvas, cx, cy, scale)
+            PowerButtonState.RESTRICTED -> drawWarning(canvas, cx, cy, scale)
             PowerButtonState.UNPAIRED -> drawKeyhole(canvas, cx, cy, scale)
             PowerButtonState.CONNECTING -> drawUp(canvas, cx, cy, scale)
             PowerButtonState.CONNECTED -> drawCheck(canvas, cx, cy, scale)

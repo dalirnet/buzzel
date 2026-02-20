@@ -3,9 +3,13 @@ package com.buzzel.ui
 import android.Manifest
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
 import android.graphics.ImageFormat
 import android.graphics.Outline
 import android.graphics.Rect
@@ -24,7 +28,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
 import android.text.TextUtils
-import android.util.Log
 import android.util.Size
 import android.util.TypedValue
 import android.view.Gravity
@@ -40,6 +43,7 @@ import android.widget.TextView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.buzzel.BuzzelApp
+import com.buzzel.debug.FileLogger
 import com.buzzel.protocol.Protocol
 import com.buzzel.service.BuzzelService
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -50,6 +54,7 @@ class MainActivity : Activity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val PERMISSION_REQUEST = 1001
+        private const val BT_ENABLE_REQUEST = 1002
 
         private val ICON_BACK =
             arrayOf(
@@ -163,7 +168,7 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d(TAG, "Activity created")
+        FileLogger.d(TAG, "Activity created")
         Brand.load(this)
         AppColors.resolve(this)
         lastDarkMode = AppColors.isDarkMode(this)
@@ -195,6 +200,7 @@ class MainActivity : Activity() {
             return
         }
         refreshState()
+        if (hasAllPermissions()) promptEnableBluetooth()
     }
 
     override fun onDestroy() {
@@ -204,6 +210,11 @@ class MainActivity : Activity() {
         logListener = null
         stopCamera()
         if (scannerInitialized) scanner.close()
+        // Stop the service when leaving the app if not actively connected.
+        // When connected, the service stays alive in the background with its notification.
+        if (!app.isDeviceConnected) {
+            stopService(Intent(this, BuzzelService::class.java))
+        }
         super.onDestroy()
     }
 
@@ -213,7 +224,23 @@ class MainActivity : Activity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSION_REQUEST) refreshState()
+        if (requestCode == PERMISSION_REQUEST) {
+            if (hasAllPermissions()) {
+                promptEnableBluetooth()
+                if (app.configStore.pairingCode != null) {
+                    startService()
+                }
+            }
+            refreshState()
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun promptEnableBluetooth() {
+        val bt = (getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter ?: return
+        if (!bt.isEnabled) {
+            startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), BT_ENABLE_REQUEST)
+        }
     }
 
     @Deprecated("Use onBackPressedDispatcher")
@@ -235,8 +262,9 @@ class MainActivity : Activity() {
     private fun handleQrResult(raw: ByteArray) {
         val qr = Protocol.parseQr(raw) ?: return
         val store = app.configStore
-        store.sessionId = Protocol.deriveSessionId(qr.seed)
+        store.sessionId = null
         store.pairingCode = Protocol.derivePairingCode(qr.seed)
+        store.pendingSessionId = Protocol.deriveSessionId(qr.seed)
         store.macHost = qr.host
         store.preferTransport = qr.prefer
         app.hasBeenConnected = false
@@ -439,7 +467,7 @@ class MainActivity : Activity() {
         val title =
             when {
                 showActivityLog -> "Activity Log"
-                scanMode -> "Scan QR Code"
+                scanMode -> "Quick Setup"
                 else -> "Buzzel"
             }
         headerView.setTitle(title)
@@ -455,56 +483,46 @@ class MainActivity : Activity() {
             headerView.setTrailingIconEnabled(true)
         } else {
             headerView.setTrailingIcon(ICON_QR, SVGIconView.IconMode.MIXED, AppColors.accent)
-            val disabled = connected || state == PowerButtonState.NO_PERMISSION
+            val disabled = connected || state == PowerButtonState.RESTRICTED
             headerView.setTrailingIconEnabled(!disabled)
         }
 
         refreshStatusLine()
-
-        if (app.configStore.sessionId != null && state != PowerButtonState.NO_PERMISSION) {
-            startService()
-        }
     }
 
     private fun computeState(): PowerButtonState {
-        if (!hasAllPermissions()) return PowerButtonState.NO_PERMISSION
+        if (!hasAllPermissions()) return PowerButtonState.RESTRICTED
         return PowerButtonState.current(app)
     }
 
     private fun refreshStatusLine() {
+        if (scanMode) {
+            setStatusText("Point camera at QR code")
+            return
+        }
         val state = computeState()
         val newText =
             when (state) {
-                PowerButtonState.NO_PERMISSION -> {
+                PowerButtonState.RESTRICTED -> {
                     firstMissingPermissionText()
                 }
 
                 PowerButtonState.UNPAIRED -> {
-                    "No device paired yet"
+                    "No device paired"
                 }
 
                 PowerButtonState.CONNECTING -> {
-                    "Looking for your device"
+                    val transport = app.connectingTransport
+                    if (transport.isNullOrEmpty()) "Searching for device" else "Searching via $transport"
                 }
 
                 PowerButtonState.CONNECTED -> {
-                    val entries = app.getLogEntrySnapshot()
-                    if (entries.isNotEmpty()) {
-                        val last = entries.last()
-                        "${last.message} \u00B7 ${last.timeString}"
-                    } else {
-                        "Connected and ready"
-                    }
+                    val transport = app.connectedTransport
+                    if (transport.isNullOrEmpty()) "Connected" else "Connected via $transport"
                 }
 
                 PowerButtonState.DISCONNECTED -> {
-                    val entries = app.getLogEntrySnapshot()
-                    if (entries.isNotEmpty()) {
-                        val last = entries.last()
-                        "${last.message} \u00B7 ${last.timeString}"
-                    } else {
-                        "Tap to reconnect"
-                    }
+                    if (app.hasBeenConnected) "Connection lost" else "Ready to connect"
                 }
             }
         setStatusText(newText)
@@ -514,9 +532,9 @@ class MainActivity : Activity() {
         val missing =
             REQUIRED_PERMISSIONS.firstOrNull {
                 ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
-            } ?: return "Grant permissions"
+            } ?: return "Required permissions are missing"
         val label = permLabel(missing)
-        return "Tap to grant $label access"
+        return "$label access is required"
     }
 
     private fun permLabel(perm: String): String =
@@ -612,17 +630,41 @@ class MainActivity : Activity() {
 
         val snapshot = app.getLogEntrySnapshot().reversed()
         if (snapshot.isEmpty()) {
-            entries.addView(
+            val emptyState =
+                LinearLayout(ctx).apply {
+                    tag = "empty"
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    setPadding(0, dp(120), 0, 0)
+                }
+            emptyState.addView(
+                WaveBLogoView(ctx, AppColors.withAlpha(AppColors.secondary, 77)).also {
+                    it.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+                },
+            )
+            emptyState.addView(
                 TextView(ctx).apply {
                     text = "No activity yet"
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                     typeface = Brand.typeface
                     setTextColor(AppColors.secondary)
                     gravity = Gravity.CENTER
-                    setPadding(0, dp(40), 0, 0)
+                    setPadding(0, dp(12), 0, 0)
                 },
                 matchWrap(),
             )
+            emptyState.addView(
+                TextView(ctx).apply {
+                    text = "Events will appear here"
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    typeface = Brand.typeface
+                    setTextColor(AppColors.withAlpha(AppColors.secondary, 153))
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(4), 0, 0)
+                },
+                matchWrap(),
+            )
+            entries.addView(emptyState, matchWrap())
         } else {
             for ((i, entry) in snapshot.withIndex()) {
                 entries.addView(buildLogEntryRow(entry))
@@ -634,7 +676,7 @@ class MainActivity : Activity() {
                             .LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 1,
-                            ).apply { marginStart = dp(35) },
+                            ).apply { marginStart = dp(28) },
                     )
                 }
             }
@@ -653,7 +695,7 @@ class MainActivity : Activity() {
         // Listen for new entries
         val listener: (com.buzzel.model.LogEntry) -> Unit = { entry ->
             runOnUiThread {
-                if (entries.childCount == 1 && entries.getChildAt(0) is TextView) {
+                if (entries.childCount == 1 && entries.getChildAt(0).tag == "empty") {
                     entries.removeAllViews()
                 }
                 if (entries.childCount > 0) {
@@ -665,7 +707,7 @@ class MainActivity : Activity() {
                             .LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 1,
-                            ).apply { marginStart = dp(35) },
+                            ).apply { marginStart = dp(28) },
                     )
                 }
                 entries.addView(buildLogEntryRow(entry), 0)
@@ -679,7 +721,7 @@ class MainActivity : Activity() {
     private fun buildLogEntryRow(entry: com.buzzel.model.LogEntry): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(20), dp(10), dp(20), dp(10))
+            setPadding(dp(16), dp(8), dp(16), dp(8))
             gravity = Gravity.TOP
 
             // Status dot
@@ -697,7 +739,7 @@ class MainActivity : Activity() {
                 dot,
                 LinearLayout.LayoutParams(dp(8), dp(8)).apply {
                     topMargin = dp(6)
-                    marginEnd = dp(10)
+                    marginEnd = dp(8)
                 },
             )
 
@@ -761,7 +803,7 @@ class MainActivity : Activity() {
                     .LayoutParams(
                         LinearLayout.LayoutParams.WRAP_CONTENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { marginStart = dp(10) },
+                    ).apply { marginStart = dp(8) },
             )
         }
 
@@ -769,14 +811,20 @@ class MainActivity : Activity() {
 
     private fun onPowerButtonTap(state: PowerButtonState) {
         when (state) {
-            PowerButtonState.NO_PERMISSION -> {
-                ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSION_REQUEST)
+            PowerButtonState.RESTRICTED -> {
+                if (isAnyPermissionPermanentlyDenied()) {
+                    openAppSettings()
+                } else {
+                    ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSION_REQUEST)
+                }
             }
 
-            PowerButtonState.UNPAIRED -> { // no-op
+            PowerButtonState.UNPAIRED -> {
+                enterScanMode()
             }
 
-            PowerButtonState.CONNECTING -> { // no-op
+            PowerButtonState.CONNECTING -> {
+                stopService(Intent(this, BuzzelService::class.java))
             }
 
             PowerButtonState.CONNECTED -> {
@@ -790,10 +838,7 @@ class MainActivity : Activity() {
     }
 
     private fun onStatusLineTap() {
-        val state = computeState()
-        if (state == PowerButtonState.CONNECTED) {
-            showActivityLogView()
-        }
+        showActivityLogView()
     }
 
     // --- Scan mode ---
@@ -882,7 +927,7 @@ class MainActivity : Activity() {
                         .addOnFailureListener { image.close() }
                         .addOnCompleteListener { image.close() }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error processing image", e)
+                    FileLogger.e(TAG, "Error processing image", e)
                     image.close()
                 }
             }, bgHandler)
@@ -911,7 +956,7 @@ class MainActivity : Activity() {
                 bgHandler,
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to open camera", e)
+            FileLogger.e(TAG, "Failed to open camera", e)
         }
     }
 
@@ -950,7 +995,7 @@ class MainActivity : Activity() {
                 bgHandler,
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to create preview session", e)
+            FileLogger.e(TAG, "Failed to create preview session", e)
         }
     }
 
@@ -995,7 +1040,10 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun triggerFocus(nx: Float, ny: Float) {
+    private fun triggerFocus(
+        nx: Float,
+        ny: Float,
+    ) {
         val session = captureSession ?: return
         val request = previewRequest ?: return
         val sensor = sensorArraySize ?: return
@@ -1003,11 +1051,14 @@ class MainActivity : Activity() {
         val halfSize = 150
         val cx = (nx * sensor.width()).toInt().coerceIn(halfSize, sensor.width() - halfSize)
         val cy = (ny * sensor.height()).toInt().coerceIn(halfSize, sensor.height() - halfSize)
-        val focusRect = MeteringRectangle(
-            cx - halfSize, cy - halfSize,
-            halfSize * 2, halfSize * 2,
-            MeteringRectangle.METERING_WEIGHT_MAX
-        )
+        val focusRect =
+            MeteringRectangle(
+                cx - halfSize,
+                cy - halfSize,
+                halfSize * 2,
+                halfSize * 2,
+                MeteringRectangle.METERING_WEIGHT_MAX,
+            )
 
         try {
             // Cancel any ongoing AF first
@@ -1024,10 +1075,13 @@ class MainActivity : Activity() {
             handler.postDelayed({
                 request.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
                 request.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-                try { session.setRepeatingRequest(request.build(), null, bgHandler) } catch (_: Exception) {}
+                try {
+                    session.setRepeatingRequest(request.build(), null, bgHandler)
+                } catch (_: Exception) {
+                }
             }, 2000)
         } catch (e: Exception) {
-            Log.e(TAG, "Focus trigger failed", e)
+            FileLogger.e(TAG, "Focus trigger failed", e)
         }
     }
 
@@ -1039,7 +1093,7 @@ class MainActivity : Activity() {
             imageReader?.close()
             bgThread?.quitSafely()
         } catch (e: Exception) {
-            Log.e(TAG, "Error stopping camera", e)
+            FileLogger.e(TAG, "Error stopping camera", e)
         }
         captureSession = null
         cameraDevice = null
@@ -1055,7 +1109,21 @@ class MainActivity : Activity() {
     private fun hasAllPermissions(): Boolean =
         REQUIRED_PERMISSIONS.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
 
+    private fun isAnyPermissionPermanentlyDenied(): Boolean =
+        REQUIRED_PERMISSIONS.any {
+            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED &&
+                !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+        }
+
+    private fun openAppSettings() {
+        startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", packageName, null)
+            },
+        )
+    }
+
     private fun startService() {
-        ContextCompat.startForegroundService(this, Intent(this, BuzzelService::class.java))
+        startService(Intent(this, BuzzelService::class.java))
     }
 }

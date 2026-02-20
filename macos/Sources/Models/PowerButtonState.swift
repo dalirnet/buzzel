@@ -2,7 +2,7 @@ import CoreBluetooth
 import Foundation
 
 enum PowerButtonState: Equatable {
-  case noPermission
+  case restricted
   case unpaired
   case connecting
   case connected
@@ -10,8 +10,8 @@ enum PowerButtonState: Equatable {
 
   static func current(store: AppStore, transportManager: TransportManager) -> PowerButtonState {
     let bleAuth = CBCentralManager.authorization
-    if bleAuth == .notDetermined || bleAuth == .denied {
-      return .noPermission
+    if bleAuth != .allowedAlways {
+      return .restricted
     }
 
     guard store.pairedDevice != nil else { return .unpaired }
@@ -19,8 +19,10 @@ enum PowerButtonState: Equatable {
     switch transportManager.connectionState {
     case .active:
       return .connected
+    case .idle:
+      return .disconnected
     default:
-      return transportManager.hasBeenConnected ? .disconnected : .connecting
+      return .connecting
     }
   }
 }
