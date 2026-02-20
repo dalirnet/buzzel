@@ -17,13 +17,26 @@ class PowerButtonView(
 ) : View(context) {
     var state: PowerButtonState = PowerButtonState.UNPAIRED
         set(value) {
-            if (field == value) return
-            val oldColor = stateColor(field)
+            if (field == value && !readyChanged) return
+            readyChanged = false
+            val oldColor = currentColor
             field = value
             val newColor = stateColor(value)
             animateColorChange(oldColor, newColor)
             updatePulse()
         }
+
+    /** When true and state is DISCONNECTED, shows "ready" appearance instead of "lost". */
+    var ready: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            readyChanged = true
+            // Re-trigger state setter to update color/icon
+            state = state
+        }
+
+    private var readyChanged = false
 
     var onTap: (() -> Unit)? = null
 
@@ -75,7 +88,7 @@ class PowerButtonView(
             PowerButtonState.UNPAIRED -> AppColors.mutedGray
             PowerButtonState.CONNECTING -> AppColors.mutedOrange
             PowerButtonState.CONNECTED -> AppColors.mutedGreen
-            PowerButtonState.DISCONNECTED -> AppColors.mutedRed
+            PowerButtonState.DISCONNECTED -> if (ready) AppColors.accent else AppColors.mutedRed
         }
 
     // region Animation
@@ -274,7 +287,7 @@ class PowerButtonView(
             PowerButtonState.UNPAIRED -> drawKeyhole(canvas, cx, cy, scale)
             PowerButtonState.CONNECTING -> drawUp(canvas, cx, cy, scale)
             PowerButtonState.CONNECTED -> drawCheck(canvas, cx, cy, scale)
-            PowerButtonState.DISCONNECTED -> drawCross(canvas, cx, cy, scale)
+            PowerButtonState.DISCONNECTED -> if (ready) drawPlay(canvas, cx, cy, scale) else drawCross(canvas, cx, cy, scale)
         }
     }
 
@@ -347,6 +360,20 @@ class PowerButtonView(
             PathParser.createPathFromPathData(
                 "M16 11.55L12.6 9a1 1 0 0 0-1.2 0L8 11.55m6 2.5l-2-1.5l-2 1.5",
             )
+        p.transform(makeMatrix(cx, cy, scale))
+        canvas.drawPath(p, innerStrokePaint)
+    }
+
+    private fun drawPlay(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        scale: Float,
+    ) {
+        innerStrokePaint.strokeWidth = scale * 1.5f
+        innerStrokePaint.strokeCap = Paint.Cap.ROUND
+        innerStrokePaint.strokeJoin = Paint.Join.ROUND
+        val p = PathParser.createPathFromPathData("M10 8l6 4l-6 4z")
         p.transform(makeMatrix(cx, cy, scale))
         canvas.drawPath(p, innerStrokePaint)
     }

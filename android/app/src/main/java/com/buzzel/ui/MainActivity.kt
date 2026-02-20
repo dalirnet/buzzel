@@ -56,6 +56,10 @@ class MainActivity : Activity() {
         private const val PERMISSION_REQUEST = 1001
         private const val BT_ENABLE_REQUEST = 1002
 
+        private val ICON_ARROW_DOWN = arrayOf(arrayOf("M12 5v14M5 12l7 7 7-7"))
+        private val ICON_ARROW_UP = arrayOf(arrayOf("M12 19V5M5 12l7-7 7 7"))
+        private val ICON_DOT = arrayOf(arrayOf("M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0"))
+
         private val ICON_BACK =
             arrayOf(
                 arrayOf(
@@ -119,9 +123,6 @@ class MainActivity : Activity() {
                     } else {
                         add(Manifest.permission.ACCESS_FINE_LOCATION)
                     }
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        add(Manifest.permission.POST_NOTIFICATIONS)
-                    }
                 }.toTypedArray()
     }
 
@@ -140,6 +141,7 @@ class MainActivity : Activity() {
     private var scanMode = false
     private var currentStatusText = ""
     private var lastDarkMode = false
+    private var permissionsEverRequested = false
     private var stateListener: ((BuzzelService.ConnectionState) -> Unit)? = null
     private var logListener: ((com.buzzel.model.LogEntry) -> Unit)? = null
 
@@ -186,6 +188,11 @@ class MainActivity : Activity() {
                 View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
             }
 
+        // If any permission shows rationale, we've asked before
+        permissionsEverRequested = REQUIRED_PERMISSIONS.any {
+            ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+        }
+
         buildLayout()
         setContentView(rootLayout)
 
@@ -200,7 +207,10 @@ class MainActivity : Activity() {
             return
         }
         refreshState()
-        if (hasAllPermissions()) promptEnableBluetooth()
+        if (hasAllPermissions()) {
+            promptEnableBluetooth()
+            requestNotificationPermission()
+        }
     }
 
     override fun onDestroy() {
@@ -225,13 +235,29 @@ class MainActivity : Activity() {
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST) {
+            val granted = permissions.zip(grantResults.toTypedArray())
+            FileLogger.i(TAG, "onPermissionResult: ${granted.joinToString { "${it.first.substringAfterLast('.')}=${if (it.second == PackageManager.PERMISSION_GRANTED) "OK" else "DENIED"}" }}")
             if (hasAllPermissions()) {
+                FileLogger.i(TAG, "All permissions granted — proceeding")
                 promptEnableBluetooth()
+                requestNotificationPermission()
                 if (app.configStore.pairingCode != null) {
                     startService()
                 }
-            } else if (isAnyPermissionPermanentlyDenied()) {
-                openAppSettings()
+            } else {
+                val still = missingPermissions()
+                FileLogger.i(TAG, "Still missing: ${still.map { it.substringAfterLast('.') }}")
+                // Inside onRequestPermissionsResult, shouldShowRequestPermissionRationale
+                // reliably returns false only for "permanently denied" (Don't allow + don't ask again)
+                val permanentlyDenied = still.filter {
+                    !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+                }
+                if (permanentlyDenied.size == still.size) {
+                    FileLogger.i(TAG, "All remaining permanently denied — opening settings")
+                    openAppSettings()
+                } else {
+                    FileLogger.i(TAG, "Some can still be requested — will prompt on next tap")
+                }
             }
             refreshState()
         }
@@ -462,6 +488,7 @@ class MainActivity : Activity() {
 
     private fun refreshState() {
         val state = computeState()
+        powerButton.ready = state == PowerButtonState.DISCONNECTED && !app.hasBeenConnected
         powerButton.state = state
         powerButton.onTap = { onPowerButtonTap(state) }
 
@@ -474,12 +501,8 @@ class MainActivity : Activity() {
             }
         headerView.setTitle(title)
 
-        // Badge
-        val connected = state == PowerButtonState.CONNECTED
-        val badgeText = if (!showActivityLog && !scanMode && connected) app.connectedDeviceName else null
-        headerView.setBadge(badgeText)
-
         // Trailing icon
+        val connected = state == PowerButtonState.CONNECTED
         if (showActivityLog || scanMode) {
             headerView.setTrailingIcon(ICON_BACK, SVGIconView.IconMode.STROKE, AppColors.text)
             headerView.setTrailingIconEnabled(true)
@@ -489,12 +512,20 @@ class MainActivity : Activity() {
             headerView.setTrailingIconEnabled(!disabled)
         }
 
+        // Device planet on orbit rings
+        orbitRings.deviceName = if (connected) app.connectedDeviceName else null
+
         refreshStatusLine()
     }
 
     private fun computeState(): PowerButtonState {
-        if (!hasAllPermissions()) return PowerButtonState.RESTRICTED
-        return PowerButtonState.current(app)
+        if (!hasAllPermissions()) {
+            FileLogger.d(TAG, "computeState: RESTRICTED — missing: ${missingPermissions().map { it.substringAfterLast('.') }}")
+            return PowerButtonState.RESTRICTED
+        }
+        val state = PowerButtonState.current(app)
+        FileLogger.d(TAG, "computeState: $state")
+        return state
     }
 
     private fun refreshStatusLine() {
@@ -630,7 +661,7 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.VERTICAL
             }
 
-        val snapshot = app.getLogEntrySnapshot().reversed()
+        val snapshot = app.getLogEntrySnapshot()
         if (snapshot.isEmpty()) {
             val emptyState =
                 LinearLayout(ctx).apply {
@@ -688,7 +719,7 @@ class MainActivity : Activity() {
                             .LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 1,
-                            ).apply { marginStart = dp(28) },
+                            ).apply { marginStart = dp(38) },
                     )
                 }
             }
@@ -704,25 +735,25 @@ class MainActivity : Activity() {
             ),
         )
 
+        // Auto-scroll to bottom on initial load
+        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+
         // Listen for new entries
         val listener: (com.buzzel.model.LogEntry) -> Unit = { entry ->
             runOnUiThread {
-                if (entries.childCount == 1 && entries.getChildAt(0).tag == "empty") {
-                    entries.removeAllViews()
-                }
                 if (entries.childCount > 0) {
                     val divider = View(ctx).apply { setBackgroundColor(AppColors.border) }
                     entries.addView(
                         divider,
-                        0,
                         LinearLayout
                             .LayoutParams(
                                 LinearLayout.LayoutParams.MATCH_PARENT,
                                 1,
-                            ).apply { marginStart = dp(28) },
+                            ).apply { marginStart = dp(38) },
                     )
                 }
-                entries.addView(buildLogEntryRow(entry), 0)
+                entries.addView(buildLogEntryRow(entry))
+                scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
             }
         }
         app.addLogEntryListener(listener)
@@ -736,21 +767,21 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(8), dp(16), dp(8))
             gravity = Gravity.TOP
 
-            // Status dot
-            val dot =
-                View(context).apply {
-                    val dotColor =
-                        if (entry.status == com.buzzel.model.LogStatus.SUCCESS) AppColors.green else AppColors.red
-                    background =
-                        GradientDrawable().apply {
-                            shape = GradientDrawable.OVAL
-                            setColor(dotColor)
-                        }
-                }
+            // Direction icon
+            val iconColor = if (entry.status == com.buzzel.model.LogStatus.SUCCESS) AppColors.green else AppColors.red
+            val iconPath = when (entry.direction) {
+                com.buzzel.model.LogDirection.INCOMING -> ICON_ARROW_DOWN
+                com.buzzel.model.LogDirection.OUTGOING -> ICON_ARROW_UP
+                com.buzzel.model.LogDirection.LOCAL -> ICON_DOT
+            }
+            val iconMode = if (entry.direction == com.buzzel.model.LogDirection.LOCAL) SVGIconView.IconMode.FILL else SVGIconView.IconMode.STROKE
             addView(
-                dot,
-                LinearLayout.LayoutParams(dp(8), dp(8)).apply {
-                    topMargin = dp(6)
+                SVGIconView(context, iconPath, iconMode).apply {
+                    this.iconColor = iconColor
+                    strokeWidth = 2f
+                },
+                LinearLayout.LayoutParams(dp(14), dp(14)).apply {
+                    topMargin = dp(3)
                     marginEnd = dp(8)
                 },
             )
@@ -783,39 +814,16 @@ class MainActivity : Activity() {
             }
             addView(center, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
 
-            // Right
-            val right =
-                LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.END
-                }
-            right.addView(
+            // Time
+            addView(
                 TextView(context).apply {
                     text = entry.timeString
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                     typeface = Brand.typeface
                     setTextColor(AppColors.secondary)
+                    setPadding(dp(8), dp(2), 0, 0)
                 },
                 wrapWrap(),
-            )
-            if (entry.direction != com.buzzel.model.LogDirection.LOCAL) {
-                right.addView(
-                    TextView(context).apply {
-                        text = if (entry.direction == com.buzzel.model.LogDirection.INCOMING) "IN" else "OUT"
-                        setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-                        setTextColor(AppColors.secondary)
-                        typeface = Brand.typeface
-                    },
-                    wrapWrap().apply { topMargin = dp(2) },
-                )
-            }
-            addView(
-                right,
-                LinearLayout
-                    .LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                    ).apply { marginStart = dp(8) },
             )
         }
 
@@ -824,7 +832,28 @@ class MainActivity : Activity() {
     private fun onPowerButtonTap(state: PowerButtonState) {
         when (state) {
             PowerButtonState.RESTRICTED -> {
-                ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSION_REQUEST)
+                val missing = missingPermissions()
+                FileLogger.i(TAG, "RESTRICTED tap — missing: ${missing.map { it.substringAfterLast('.') }}")
+                if (missing.isEmpty()) {
+                    // Permissions were granted externally (e.g. Settings); just refresh
+                    FileLogger.i(TAG, "All permissions already granted — refreshing")
+                    refreshState()
+                } else {
+                    // Check if any are permanently denied (user tapped "Don't allow" before)
+                    val permanentlyDenied = missing.filter {
+                        !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+                    }
+                    // shouldShowRequestPermissionRationale returns false for both "never asked"
+                    // and "permanently denied". We use a flag to distinguish.
+                    if (permissionsEverRequested && permanentlyDenied.size == missing.size) {
+                        FileLogger.i(TAG, "All missing permissions permanently denied — opening settings")
+                        openAppSettings()
+                    } else {
+                        FileLogger.i(TAG, "Requesting permissions: ${missing.map { it.substringAfterLast('.') }}")
+                        permissionsEverRequested = true
+                        ActivityCompat.requestPermissions(this, missing.toTypedArray(), PERMISSION_REQUEST)
+                    }
+                }
             }
 
             PowerButtonState.UNPAIRED -> {
@@ -1117,11 +1146,16 @@ class MainActivity : Activity() {
     private fun hasAllPermissions(): Boolean =
         REQUIRED_PERMISSIONS.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
 
-    private fun isAnyPermissionPermanentlyDenied(): Boolean =
-        REQUIRED_PERMISSIONS.any {
-            ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED &&
-                !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+    private fun missingPermissions(): List<String> =
+        REQUIRED_PERMISSIONS.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), PERMISSION_REQUEST + 1)
         }
+    }
 
     private fun openAppSettings() {
         startActivity(

@@ -18,18 +18,24 @@ struct ActivityLogView: View {
       }
       .frame(maxWidth: .infinity)
     } else {
-      ScrollView {
-        LazyVStack(spacing: 0) {
-          ForEach(transportManager.logEntries.reversed()) { entry in
-            ActivityLogRow(entry: entry)
-
-            if entry.id != transportManager.logEntries.first?.id {
-              Divider()
-                .padding(.leading, 28)
+      ScrollViewReader { proxy in
+        ScrollView {
+          LazyVStack(spacing: 0) {
+            ForEach(Array(transportManager.logEntries.enumerated()), id: \.element.id) { index, entry in
+              if index > 0 {
+                Divider()
+                  .padding(.leading, 38)
+              }
+              ActivityLogRow(entry: entry)
             }
           }
+          .padding(.vertical, 4)
         }
-        .padding(.vertical, 4)
+        .onChange(of: transportManager.logEntries.count) { _ in
+          if let last = transportManager.logEntries.last {
+            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+          }
+        }
       }
     }
   }
@@ -40,22 +46,41 @@ struct ActivityLogView: View {
 private struct ActivityLogRow: View {
   let entry: LogEntry
 
+  private static let iconArrowDown: [[String]] = [["M12 5v14M5 12l7 7 7-7"]]
+  private static let iconArrowUp: [[String]] = [["M12 19V5M5 12l7-7 7 7"]]
+  private static let iconDot: [[String]] = [["M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0"]]
+
+  private var iconPaths: [[String]] {
+    switch entry.direction {
+    case .incoming: return Self.iconArrowDown
+    case .outgoing: return Self.iconArrowUp
+    case .local: return Self.iconDot
+    }
+  }
+
+  private var iconMode: SVGIconView.IconMode {
+    entry.direction == .local ? .fill : .stroke(width: 2)
+  }
+
+  private var iconColor: Color {
+    entry.status == .success ? DesignColor.green : DesignColor.red
+  }
+
   var body: some View {
     HStack(alignment: .top, spacing: 8) {
-      Circle()
-        .fill(entry.status == .success ? DesignColor.green : DesignColor.red)
-        .frame(width: 8, height: 8)
-        .padding(.top, 5)
+      SVGIconView(paths: iconPaths, size: 14, color: iconColor, mode: iconMode)
+        .frame(width: 14, height: 14)
+        .padding(.top, 3)
 
       VStack(alignment: .leading, spacing: 2) {
         Text(entry.message)
-          .font(Brand.font(size: 13))
+          .font(Brand.font(size: 13, weight: .regular))
           .foregroundColor(DesignColor.text)
           .lineLimit(2)
 
         if let error = entry.error {
           Text(error)
-            .font(Brand.font(size: 11))
+            .font(Brand.font(size: 11, weight: .regular))
             .foregroundColor(DesignColor.red)
             .lineLimit(1)
         }
@@ -63,17 +88,10 @@ private struct ActivityLogRow: View {
 
       Spacer()
 
-      VStack(alignment: .trailing, spacing: 2) {
-        Text(entry.timeString)
-          .font(Brand.font(size: 11))
-          .foregroundColor(DesignColor.secondary)
-
-        if entry.direction != .local {
-          Text(entry.direction == .incoming ? "IN" : "OUT")
-            .font(Brand.font(size: 9, weight: .medium))
-            .foregroundColor(DesignColor.secondary)
-        }
-      }
+      Text(entry.timeString)
+        .font(Brand.font(size: 11, weight: .regular))
+        .foregroundColor(DesignColor.secondary)
+        .padding(.top, 2)
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 8)

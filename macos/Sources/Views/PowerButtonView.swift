@@ -4,6 +4,7 @@ import SwiftUI
 
 struct PowerButtonView: View {
   let state: PowerButtonState
+  var ready: Bool = false
   var onTap: (() -> Void)? = nil
 
   @State private var pulsing = false
@@ -99,7 +100,7 @@ struct PowerButtonView: View {
       case .unpaired: return .keyhole
       case .connecting: return .up
       case .connected: return .check
-      case .disconnected: return .cross
+      case .disconnected: return ready ? .play : .cross
       }
     }()
 
@@ -129,7 +130,7 @@ struct PowerButtonView: View {
     case .unpaired: return DesignColor.mutedGray
     case .connecting: return DesignColor.mutedOrange
     case .connected: return DesignColor.mutedGreen
-    case .disconnected: return DesignColor.mutedRed
+    case .disconnected: return ready ? DesignColor.accent : DesignColor.mutedRed
     }
   }
 
@@ -140,7 +141,7 @@ struct PowerButtonView: View {
   // MARK: - Shield Icons
 
   enum ShieldIcon {
-    case check, cross, keyhole, up, warning
+    case check, cross, keyhole, play, up, warning
 
     @ViewBuilder
     func view(scale: CGFloat, offset: CGFloat) -> some View {
@@ -176,6 +177,14 @@ struct PowerButtonView: View {
           p.addPath(
             parseSVGPath("M16 11.55L12.6 9a1 1 0 0 0-1.2 0L8 11.55m6 2.5l-2-1.5l-2 1.5").applying(
               transform))
+        }
+        .stroke(
+          DesignColor.onButton,
+          style: StrokeStyle(lineWidth: scale * 1.5, lineCap: .round, lineJoin: .round))
+
+      case .play:
+        Path { p in
+          p.addPath(parseSVGPath("M10 8l6 4l-6 4z").applying(transform))
         }
         .stroke(
           DesignColor.onButton,

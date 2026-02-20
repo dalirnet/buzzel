@@ -3,6 +3,9 @@ package com.buzzel.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
+import android.graphics.drawable.GradientDrawable
 import android.view.Choreographer
 import android.widget.FrameLayout
 import kotlin.math.abs
@@ -23,6 +26,12 @@ class OrbitRingsView(
         val durationSeconds: Double,
         val dots: List<OrbitDot>,
     )
+
+    var deviceName: String? = null
+        set(value) {
+            field = value
+            invalidate()
+        }
 
     private val rings =
         listOf(
@@ -52,6 +61,8 @@ class OrbitRingsView(
             ),
         )
 
+    private val planetRing get() = rings[1] // middle ring
+
     private val ringPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
@@ -65,6 +76,17 @@ class OrbitRingsView(
     private val glowPaint =
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.FILL
+        }
+
+    private val planetBgPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+        }
+
+    private val planetTextPaint =
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            textAlign = Paint.Align.CENTER
         }
 
     private var startTime = System.nanoTime()
@@ -149,7 +171,52 @@ class OrbitRingsView(
             }
         }
 
+        // Device planet on middle ring
+        val name = deviceName
+        if (name != null) {
+            drawDevicePlanet(canvas, cx, cy, density, elapsed, name)
+        }
+
         super.dispatchDraw(canvas)
+    }
+
+    private fun drawDevicePlanet(
+        canvas: Canvas,
+        cx: Float,
+        cy: Float,
+        density: Float,
+        elapsed: Double,
+        name: String,
+    ) {
+        val ring = planetRing
+        val radiusPx = ring.radius * density
+        val progress = elapsed / abs(ring.durationSeconds)
+        val direction = if (ring.durationSeconds > 0) 1.0 else -1.0
+        val angleDeg = progress * 360.0 * direction
+        val planetOffset = 0.45
+
+        val totalAngle = Math.toRadians(angleDeg + planetOffset * 360.0)
+        val px = cx + radiusPx * cos(totalAngle).toFloat()
+        val py = cy + radiusPx * sin(totalAngle).toFloat()
+
+        val textSize = 8f * density
+        planetTextPaint.textSize = textSize
+        planetTextPaint.typeface = Brand.typeface
+        planetTextPaint.color = AppColors.text
+
+        val textBounds = Rect()
+        planetTextPaint.getTextBounds(name, 0, name.length, textBounds)
+        val padH = 6f * density
+        val padV = 3f * density
+        val pillW = textBounds.width() + padH * 2
+        val pillH = textBounds.height() + padV * 2
+        val pillRect = RectF(px - pillW / 2, py - pillH / 2, px + pillW / 2, py + pillH / 2)
+
+        planetBgPaint.color = AppColors.withAlpha(AppColors.green, 38) // ~15%
+        canvas.drawRoundRect(pillRect, pillH / 2, pillH / 2, planetBgPaint)
+
+        val textY = py - (planetTextPaint.descent() + planetTextPaint.ascent()) / 2
+        canvas.drawText(name, px, textY, planetTextPaint)
     }
 
     // endregion

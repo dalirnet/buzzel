@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - Orbit Rings View
 
 struct OrbitRingsView<Content: View>: View {
+  var deviceName: String?
   @ViewBuilder let content: () -> Content
 
   @State private var startDate = Date.now
@@ -17,6 +18,10 @@ struct OrbitRingsView<Content: View>: View {
       ZStack {
         ForEach(Array(Self.rings.enumerated()), id: \.offset) { _, ring in
           ringView(ring: ring, elapsed: elapsed)
+        }
+
+        if let name = deviceName {
+          devicePlanet(name: name, elapsed: elapsed)
         }
 
         content()
@@ -63,6 +68,29 @@ struct OrbitRingsView<Content: View>: View {
       }
     }
     .rotationEffect(.degrees(angle))
+  }
+
+  // MARK: - Device Planet
+
+  private func devicePlanet(name: String, elapsed: TimeInterval) -> some View {
+    let ring = Self.rings[1]  // middle ring
+    let progress = elapsed / abs(ring.duration)
+    let direction: Double = ring.duration > 0 ? 1 : -1
+    let angle = progress * 360 * direction
+    let planetOffset: Double = 0.45
+
+    return Text(name)
+      .font(Brand.font(size: 8))
+      .foregroundColor(DesignColor.text)
+      .lineLimit(1)
+      .padding(.horizontal, 6)
+      .padding(.vertical, 3)
+      .background(DesignColor.green.opacity(0.15))
+      .clipShape(Capsule())
+      .rotationEffect(.degrees(-(angle + planetOffset * 360)))
+      .offset(x: ring.radius)
+      .rotationEffect(.degrees(planetOffset * 360))
+      .rotationEffect(.degrees(angle))
   }
 
   // MARK: - Models

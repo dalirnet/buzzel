@@ -70,26 +70,6 @@ struct MainView: View {
     HStack(spacing: 8) {
       AppHeaderLabel(title: headerTitle)
 
-      if !isSubView, powerState == .connected, let device = store.pairedDevice {
-        Text(device.name)
-          .font(Brand.font(size: 10))
-          .foregroundColor(DesignColor.secondary)
-          .padding(.horizontal, 8)
-          .padding(.vertical, 4)
-          .background(DesignColor.secondary.opacity(0.1))
-          .cornerRadius(4)
-      }
-
-      if showActivityLog, !transportManager.logEntries.isEmpty {
-        Text("\(transportManager.logEntries.count)")
-          .font(Brand.font(size: 10))
-          .foregroundColor(DesignColor.secondary)
-          .padding(.horizontal, 8)
-          .padding(.vertical, 4)
-          .background(DesignColor.secondary.opacity(0.1))
-          .cornerRadius(4)
-      }
-
       Spacer()
 
       Button {
@@ -128,12 +108,15 @@ struct MainView: View {
     VStack(spacing: 0) {
       Spacer()
 
-      OrbitRingsView {
+      OrbitRingsView(deviceName: powerState == .connected ? store.pairedDevice?.name : nil) {
         AnimatedSwitcher(key: showQR) { isQR in
           if isQR {
             qrContent
           } else {
-            PowerButtonView(state: powerState) {
+            PowerButtonView(
+              state: powerState,
+              ready: powerState == .disconnected && !transportManager.hasBeenConnected
+            ) {
               onPowerButtonTap()
             }
             .frame(width: 94, height: 94)
