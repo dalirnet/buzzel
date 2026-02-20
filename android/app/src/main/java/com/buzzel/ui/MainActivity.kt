@@ -8,8 +8,6 @@ import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
-import android.provider.Settings
 import android.graphics.ImageFormat
 import android.graphics.Outline
 import android.graphics.Rect
@@ -22,11 +20,13 @@ import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.params.MeteringRectangle
 import android.media.ImageReader
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.provider.Settings
 import android.text.TextUtils
 import android.util.Size
 import android.util.TypedValue
@@ -230,6 +230,8 @@ class MainActivity : Activity() {
                 if (app.configStore.pairingCode != null) {
                     startService()
                 }
+            } else if (isAnyPermissionPermanentlyDenied()) {
+                openAppSettings()
             }
             refreshState()
         }
@@ -634,12 +636,14 @@ class MainActivity : Activity() {
                 LinearLayout(ctx).apply {
                     tag = "empty"
                     orientation = LinearLayout.VERTICAL
-                    gravity = Gravity.CENTER_HORIZONTAL
-                    setPadding(0, dp(120), 0, 0)
+                    gravity = Gravity.CENTER
                 }
             emptyState.addView(
                 WaveBLogoView(ctx, AppColors.withAlpha(AppColors.secondary, 77)).also {
-                    it.layoutParams = LinearLayout.LayoutParams(dp(32), dp(32))
+                    it.layoutParams =
+                        LinearLayout.LayoutParams(dp(32), dp(32)).apply {
+                            gravity = Gravity.CENTER_HORIZONTAL
+                        }
                 },
             )
             emptyState.addView(
@@ -664,7 +668,15 @@ class MainActivity : Activity() {
                 },
                 matchWrap(),
             )
-            entries.addView(emptyState, matchWrap())
+            container.addView(
+                emptyState,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f,
+                ),
+            )
+            return container
         } else {
             for ((i, entry) in snapshot.withIndex()) {
                 entries.addView(buildLogEntryRow(entry))
@@ -812,11 +824,7 @@ class MainActivity : Activity() {
     private fun onPowerButtonTap(state: PowerButtonState) {
         when (state) {
             PowerButtonState.RESTRICTED -> {
-                if (isAnyPermissionPermanentlyDenied()) {
-                    openAppSettings()
-                } else {
-                    ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSION_REQUEST)
-                }
+                ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSION_REQUEST)
             }
 
             PowerButtonState.UNPAIRED -> {

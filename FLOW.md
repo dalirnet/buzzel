@@ -1,130 +1,146 @@
 # User Flow
 
-Step-by-step experience from install to daily use.
+## States
+
+### Android
+
+| State          | When                                                     | Power button          |
+| -------------- | -------------------------------------------------------- | --------------------- |
+| `Restricted`   | App lacks required OS permission                         | Request permission    |
+| `Unpaired`     | Permission granted, no QR scanned (`pairingCode` absent) | Open camera (scan QR) |
+| `Connecting`   | QR scanned, service searching, no active link            | Stop service          |
+| `Connected`    | Link active                                              | Disconnect            |
+| `Disconnected` | Service stopped, device paired but no active link        | Start service         |
+
+### macOS
+
+| State          | When                                                         | Power button       |
+| -------------- | ------------------------------------------------------------ | ------------------ |
+| `Restricted`   | App lacks Bluetooth permission                               | Request permission |
+| `Unpaired`     | Permission granted, no device paired (`pairedDevice` absent) | Open QR            |
+| `Connecting`   | Device paired, service searching, no active link             | Stop service       |
+| `Connected`    | Link active                                                  | Disconnect         |
+| `Disconnected` | Service stopped, device paired but no active link            | Start service      |
 
 ---
 
-## 1. Install
+## Status Line
 
-- **macOS** — Open `Buzzel.app`. A status bar icon appears in the menu bar.
-- **Android** — Install the APK. Open Buzzel from the launcher.
+Shows **system state only** — never last log entry.
+Tapping always opens the Activity Log.
 
----
+| State          | Status line text                                                                     |
+| -------------- | ------------------------------------------------------------------------------------ |
+| `Restricted`   | Android: "{Permission} access is required" / macOS: "Bluetooth access is required"   |
+| `Unpaired`     | "No device paired"                                                                   |
+| `Connecting`   | "Searching via WiFi" or "Searching via BLE"                                          |
+| `Connected`    | "Connected via WiFi" or "Connected via BLE"                                          |
+| `Disconnected` | "Connection lost" (if was connected) or "Ready to connect" (if never connected)      |
 
-## 2. Grant Permissions
+> Android scan-mode overrides status while camera is open:
+>
+> - "Point camera at QR code"
 
-On first launch each platform requests the minimum permissions it needs.
-
-| Platform | Permission    | Why                                      |
-| -------- | ------------- | ---------------------------------------- |
-| macOS    | Bluetooth     | Discover and connect to phone            |
-| Android  | Bluetooth     | Advertise and accept connections         |
-| Android  | Location      | Required by Android 11 and below for BLE |
-| Android  | Camera        | Scan QR code                             |
-| Android  | Notifications | Foreground service indicator             |
-
-The power button shows a yellow shield with a warning icon until all permissions are granted. The status line reads "Tap to grant {permission} access". Tapping the button opens the system permission prompt.
-
----
-
-## 3. Pair Devices
-
-Pairing happens once. Both devices must be on the same local network (WiFi) or within Bluetooth range.
-
-### On macOS
-
-1. Tap the QR icon in the header.
-2. A circular QR code replaces the power button area.
-3. The QR encodes a random seed, the Mac's local IP, and transport preference.
-
-### On Android
-
-1. Tap the QR icon in the header.
-2. A full-screen camera view opens.
-3. Point the camera at the macOS QR code.
-4. The app reads the seed, derives a session ID and pairing code, and stores them.
-
-### Handshake
-
-After the QR scan both apps begin searching for each other over BLE and WiFi. Once a transport connects:
-
-1. Android sends the derived pairing code to macOS.
-2. macOS verifies the code against the same seed.
-3. If valid, macOS accepts the pairing.
-4. Both devices save the pairing and transition to connected.
-
-The power button turns green with a checkmark shield. The status line reads "Connected and ready".
+> macOS QR overlay overrides status while QR is open:
+>
+> - idle → "Scan QR code with Android"
+> - Android connecting → "Waiting for device to connect"
+> - error → the error message
 
 ---
 
-## 4. Daily Use
+## Android Flow
 
-Once paired the devices reconnect automatically. No repeated scanning.
+```
+[Restricted]
+  status: "{Permission} access is required"
+  power button tap → request missing permission (or open Settings if permanently denied)
+  granted + no pairingCode → [Unpaired]
+  granted + pairingCode exists → [Connecting]
 
-### Connect
+[Unpaired]
+  status: "No device paired"
+  power button tap → open camera (same as QR icon tap)
+  QR scanned → store pairingCode → start service → [Connecting]
 
-- **Android** — Open the app and tap the power button. A foreground service starts and the app begins searching. On device reboot, the service restarts automatically if previously paired.
-- **macOS** — The app starts searching automatically when launched. It also lives in the status bar so it can stay running.
+[Connecting]
+  status: "Searching via WiFi" or "Searching via BLE"
+  no notification
+  power button tap → stop service → [Disconnected]
+  close app → stop service → reopen → [Disconnected]
+  connection + handshake succeed → [Connected]
 
-During connection the power button pulses orange with an upward shield. The status line reads "Looking for your device". The app tries BLE first (or WiFi, depending on preference), and falls back to the other transport if the first one times out after 10 seconds.
+[Connected]
+  status: "Connected via WiFi" or "Connected via BLE"
+  service in background, notification visible
+  power button tap → disconnect → [Disconnected]
+  close app → service stays alive, notification stays
+  link drops → service retries (up to 2×) → [Disconnected]
 
-### Connected
+[Disconnected]
+  status: "Connection lost" (if hasBeenConnected) or "Ready to connect" (if !hasBeenConnected)
+  service stopped, no notification
+  power button tap → start service → [Connecting]
+  close app → nothing (service already stopped)
+  reopen app → stays [Disconnected], user must tap power button
+```
 
-- Power button: solid green, checkmark shield.
-- Status bar icon (macOS): active.
-- Notification (Android): foreground service indicator.
-- Status line: shows the last activity entry and its timestamp, or "Connected and ready" if there is no activity yet.
+## macOS Flow
 
-A ping is exchanged every 30 seconds to confirm the link is alive.
+```
+[Restricted]
+  status: "Bluetooth access is required"
+  power button tap → request Bluetooth access
+  granted + no pairedDevice → [Unpaired]
+  granted + pairedDevice exists → [Connecting]
 
-### Disconnect
+[Unpaired]
+  status: "No device paired"
+  power button tap → open QR (same as QR icon tap)
+  QR icon tap → generate QR, show it, enter pairing mode
+    status: "Scan QR code with Android"
+    Android connects → status: "Waiting for device to connect"
+    error → status: error message
+    pairing succeeds → store pairedDevice → [Connected], close QR
 
-Tap the green power button to disconnect gracefully. Both sides return to idle.
+[Connecting]
+  status: "Searching via WiFi" or "Searching via BLE"
+  no notification
+  power button tap → stop → [Disconnected]
+  connection succeeds → [Connected]
 
-- Power button: red, cross shield.
-- Status bar icon (macOS): dimmed.
-- Status line: shows the last activity, or "Tap to reconnect" if there is none.
+[Connected]
+  status: "Connected via WiFi" or "Connected via BLE"
+  no notification (menu bar item is the indicator)
+  power button tap → disconnect → [Disconnected]
+  link drops → retries (up to 2×) → [Disconnected]
 
-### Reconnect
+[Disconnected]
+  status: "Connection lost" (if hasBeenConnected) or "Ready to connect" (if !hasBeenConnected)
+  no notification
+  power button tap → start searching → [Connecting]
+```
 
-Tap the red power button to start searching again. The flow returns to the Connect step above.
+## State Detection Logic
 
-### Connection Lost
+### Android (`PowerButtonState.current`)
 
-If the link drops unexpectedly (out of range, WiFi change, etc.) the app detects it via keepalive timeout (no response within 10 seconds) and returns to disconnected state. Tap the power button to reconnect.
+```
+1. BLUETOOTH_CONNECT permission granted?  no → RESTRICTED
+2. configStore.pairingCode != null?       no → UNPAIRED
+3. serviceConnectionState == ACTIVE?     yes → CONNECTED
+4. service running?                      yes → CONNECTING
+                                          no → DISCONNECTED (hasBeenConnected → "Connection lost")
+                                                             (!hasBeenConnected → "Ready to connect")
+```
 
----
+### macOS (`PowerButtonState.current`)
 
-## 5. Activity Log
-
-Tap the status line (when connected or disconnected) to open the activity log. It shows recent events (up to 200 on Android, 100 on macOS), newest first.
-
-Each entry displays:
-
-- Green or red dot (success / failure)
-- Message (up to 2 lines)
-- Optional error detail
-- Timestamp
-- Optional direction (IN / OUT)
-
-Tap the back arrow in the header to return to the main view.
-
----
-
-## 6. Unpair
-
-Unpair is handled via the protocol. When one device sends an unpair signal, both sides clear all stored pairing data (session ID, pairing code, device info). After unpairing the power button returns to gray with a keyhole shield and the status line reads "No device paired yet".
-
-To use Buzzel again, repeat the pairing flow from step 3.
-
----
-
-## State Summary
-
-| State         | Button Color | Shield Icon | Status Line                            |
-| ------------- | ------------ | ----------- | -------------------------------------- |
-| No permission | Yellow       | Warning     | Tap to grant {permission} access       |
-| Unpaired      | Gray         | Keyhole     | No device paired yet                   |
-| Connecting    | Orange       | Chevrons up | Looking for your device                |
-| Connected     | Green        | Checkmark   | {last activity} or Connected and ready |
-| Disconnected  | Red          | Cross       | {last activity} or Tap to reconnect    |
+```
+1. CBCentralManager.authorization ok?    no → RESTRICTED
+2. store.pairedDevice != null?           no → UNPAIRED
+3. connectionState == .active?          yes → CONNECTED
+4. service running?                      yes → CONNECTING
+                                          no → DISCONNECTED (hasBeenConnected → "Connection lost")
+                                                             (!hasBeenConnected → "Ready to connect")
+```
