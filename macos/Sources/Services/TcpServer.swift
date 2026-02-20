@@ -1,8 +1,7 @@
 import Foundation
 import Network
-import os.log
 
-private let log = OSLog(subsystem: "com.buzzel", category: "TcpServer")
+private let cat = "TcpServer"
 
 protocol TcpServerDelegate: AnyObject {
   func tcpServerDidAcceptClient()
@@ -24,12 +23,11 @@ class TcpServer {
   var isListening: Bool { listener?.state == .ready }
 
   func start(port: UInt16) {
-    os_log("TCP server starting on port %d", log: log, type: .info, port)
-    stop()
+    FileLogger.info("TCP server starting on port \(port)", category: cat)
+    stopInternal()
     guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
     do { listener = try NWListener(using: .tcp, on: nwPort) } catch { return }
 
-    listener?.stateUpdateHandler = { _ in }
     listener?.newConnectionHandler = { [weak self] newConn in
       self?.connection?.cancel()
       self?.connection = newConn
@@ -39,7 +37,11 @@ class TcpServer {
   }
 
   func stop() {
-    os_log("TCP server stopped", log: log, type: .info)
+    FileLogger.info("TCP server stopped", category: cat)
+    stopInternal()
+  }
+
+  private func stopInternal() {
     connection?.cancel()
     connection = nil
     listener?.cancel()
@@ -48,15 +50,15 @@ class TcpServer {
 
   func send(_ data: Data) -> Bool {
     guard let conn = connection, conn.state == .ready else { return false }
-    os_log("TCP send: %d bytes", log: log, type: .debug, data.count)
+    FileLogger.debug("TCP send: \(data.count) bytes", category: cat)
     conn.send(content: FrameCodec.encode(data), completion: .contentProcessed { _ in })
     return true
   }
 
   private func setupConnection(_ conn: NWConnection) {
-    os_log("TCP client connected", log: log, type: .info)
+    FileLogger.info("TCP client connected", category: cat)
     conn.stateUpdateHandler = { [weak self] state in
-      os_log("TCP connection state: %{public}@", log: log, type: .debug, String(describing: state))
+      FileLogger.debug("TCP connection state: \(state)", category: cat)
       switch state {
       case .ready:
         self?.pendingBody = Data()
@@ -93,12 +95,11 @@ class TcpServer {
 
   private func readBody(length: Int) {
     guard connection != nil, length > 0, length <= TcpServer.wifiMaxPayload else {
-      if length <= 0 || length > TcpServer.wifiMaxPayload {
-        os_log("Invalid frame size: %d", log: log, type: .error, length)
-      }
+      FileLogger.error("Invalid frame size: \(length)", category: cat)
+      delegate?.tcpServerDidDisconnect()
       return
     }
-    os_log("TCP frame: %d bytes", log: log, type: .debug, length)
+    FileLogger.debug("TCP frame: \(length) bytes", category: cat)
     pendingBody = Data()
     pendingBodyLength = length
     readBodyChunk()

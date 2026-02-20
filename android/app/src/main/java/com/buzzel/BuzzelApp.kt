@@ -3,8 +3,8 @@ package com.buzzel
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.util.Log
 import com.buzzel.config.ConfigStore
+import com.buzzel.debug.FileLogger
 import com.buzzel.model.LogEntry
 import com.buzzel.service.BuzzelService
 
@@ -19,7 +19,7 @@ class BuzzelApp : Application() {
 
     var isDeviceConnected: Boolean = false
         set(value) {
-            Log.i(TAG, "Connection state: $value")
+            FileLogger.i(TAG, "Connection state: $value")
             field = value
             connectionListeners.forEach { it(value) }
         }
@@ -38,9 +38,13 @@ class BuzzelApp : Application() {
 
     var connectedDeviceName: String? = null
 
+    var connectedTransport: String? = null
+
+    var connectingTransport: String? = null
+
     var serviceConnectionState: BuzzelService.ConnectionState = BuzzelService.ConnectionState.IDLE
         set(value) {
-            Log.i(TAG, "Service connection state: $value")
+            FileLogger.i(TAG, "Service connection state: $value")
             field = value
             serviceConnectionStateListeners.forEach { it(value) }
         }
@@ -81,7 +85,8 @@ class BuzzelApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "Application created")
+        FileLogger.init(this)
+        FileLogger.i(TAG, "Application created — log: ${FileLogger.path()}")
         configStore = ConfigStore(this)
         createNotificationChannel()
     }

@@ -1,8 +1,7 @@
 import Combine
 import Foundation
-import os.log
 
-private let log = OSLog(subsystem: "com.buzzel", category: "TransportManager")
+private let cat = "TransportManager"
 
 class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate {
 
@@ -12,10 +11,14 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   private static let pingInterval: TimeInterval = 30
   private static let failoverTimeout: TimeInterval = 10
   private static let handshakeTimeout: TimeInterval = 30
+  private static let maxReconnectAttempts = 2
 
   enum ConnectionState { case idle, connecting, handshaking, active }
 
-  enum Transport: String { case wifi, ble }
+  enum Transport: String {
+    case wifi, ble
+    var displayName: String { self == .wifi ? "WiFi" : "BLE" }
+  }
 
   private struct FailoverStep {
     let transport: Transport
@@ -28,7 +31,9 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   @Published var pairingError: String?
   @Published var logEntries: [LogEntry] = []
   @Published var activeTransport: String = ""
+  @Published var connectingTransport: String = ""
   @Published var bleAuthorized = false
+  @Published var bluetoothPoweredOff = false
 
   var onPairingComplete: ((String) -> Void)?
   var onDeviceReady: (() -> Void)?
@@ -36,6 +41,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   let ble = BleCentral()
   private let tcpServer = TcpServer()
   private var bleSub: AnyCancellable?
+  private var blePoweredOffSub: AnyCancellable?
   private let maxLogEntries = 100
   private let deviceName = "Android"
 
@@ -49,11 +55,14 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
   // Keepalive
   private var lastPongTime: Date?
+  private var lastPingSentTime: Date?
   private var pingTimer: DispatchSourceTimer?
-  private var pongTimeoutWork: DispatchWorkItem?
 
   // Handshake timeout
   private var handshakeWork: DispatchWorkItem?
+
+  // Reconnect tracking
+  private var reconnectAttempts = 0
 
   // Reliable delivery
   private var nextSeq: UInt16 = 0
@@ -69,6 +78,9 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       .receive(on: DispatchQueue.main)
       .map { $0 == .allowedAlways }
       .assign(to: \.bleAuthorized, on: self)
+    blePoweredOffSub = ble.$bluetoothPoweredOff
+      .receive(on: DispatchQueue.main)
+      .assign(to: \.bluetoothPoweredOff, on: self)
   }
 
   // MARK: - Failover
@@ -77,13 +89,13 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     let primary: Transport = prefer == "ble" ? .ble : .wifi
     let secondary: Transport = primary == .wifi ? .ble : .wifi
     failoverSteps = [FailoverStep(transport: primary), FailoverStep(transport: secondary)]
-    os_log(
-      "Failover steps: %{public}@", log: log, type: .debug,
-      failoverSteps.map { $0.transport.rawValue }.joined(separator: ", "))
+    FileLogger.debug(
+      "Failover steps: \(failoverSteps.map { $0.transport.rawValue }.joined(separator: ", "))",
+      category: cat)
   }
 
   private func startFailover(prefer: String) {
-    os_log("Starting failover, prefer=%{public}@", log: log, type: .info, prefer)
+    FileLogger.info("Starting failover, prefer=\(prefer)", category: cat)
     buildFailoverSteps(prefer: prefer)
     failoverIndex = 0
     tryNextFailoverStep()
@@ -91,10 +103,15 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
   private func tryNextFailoverStep() {
     failoverWork?.cancel()
-    guard !failoverSteps.isEmpty else { return }
+    guard !failoverSteps.isEmpty else {
+      FileLogger.error("Failover: no steps configured", category: cat)
+      return
+    }
     let step = failoverSteps[failoverIndex % failoverSteps.count]
 
-    os_log("Failover: trying %{public}@", log: log, type: .debug, step.transport.rawValue)
+    FileLogger.info(
+      "Failover step \(failoverIndex): trying \(step.transport.rawValue) (timeout=\(Self.failoverTimeout)s)",
+      category: cat)
     stopCurrentTransport()
     transitionTo(.connecting)
 
@@ -109,6 +126,9 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
     let work = DispatchWorkItem { [weak self] in
       guard let self = self, self.connectionState != .active else { return }
+      FileLogger.info(
+        "Failover timeout: \(step.transport.rawValue) did not connect in \(Self.failoverTimeout)s, advancing",
+        category: cat)
       self.failoverIndex += 1
       self.tryNextFailoverStep()
     }
@@ -117,14 +137,14 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   }
 
   private func stopCurrentTransport() {
-    os_log("Stopping current transport", log: log, type: .debug)
+    FileLogger.debug("Stopping current transport", category: cat)
     tcpServer.stop()
     ble.stop()
     currentTransport = nil
   }
 
   private func cancelFailover() {
-    os_log("Failover cancelled", log: log, type: .debug)
+    FileLogger.debug("Failover cancelled", category: cat)
     failoverWork?.cancel()
     failoverWork = nil
   }
@@ -134,9 +154,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   private func transitionTo(_ newState: ConnectionState) {
     let oldState = connectionState
     guard oldState != newState || newState == .active else { return }
-    os_log(
-      "State: %{public}@ → %{public}@", log: log, type: .info,
-      String(describing: oldState), String(describing: newState))
+    FileLogger.info("State: \(oldState) → \(newState)", category: cat)
     connectionState = newState
 
     switch newState {
@@ -145,17 +163,21 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       cancelHandshakeTimeout()
       cancelRetry()
     case .connecting:
-      break
+      DispatchQueue.main.async {
+        self.connectingTransport = self.currentTransport?.displayName ?? ""
+      }
     case .handshaking:
       startHandshakeTimeout()
     case .active:
       cancelFailover()
       cancelHandshakeTimeout()
       lastPongTime = Date()
+      lastPingSentTime = nil
+      reconnectAttempts = 0
       DispatchQueue.main.async {
         self.hasBeenConnected = true
         self.isConnected = true
-        self.activeTransport = self.currentTransport?.rawValue.uppercased() ?? ""
+        self.activeTransport = self.currentTransport?.displayName ?? ""
       }
       startKeepalive()
     }
@@ -166,6 +188,11 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
         self.activeTransport = ""
       }
     }
+    if newState != .connecting {
+      DispatchQueue.main.async {
+        self.connectingTransport = ""
+      }
+    }
   }
 
   // MARK: - Handshake Timeout
@@ -174,7 +201,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     cancelHandshakeTimeout()
     let work = DispatchWorkItem { [weak self] in
       guard let self = self, self.connectionState == .handshaking else { return }
-      os_log("Handshake timeout", log: log, type: .error)
+      FileLogger.error("Handshake timeout", category: cat)
       self.appendEntry(
         .deviceDisconnected, "Handshake timeout",
         status: .failed, error: "No response")
@@ -197,15 +224,20 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     timer.schedule(deadline: .now() + Self.pingInterval, repeating: Self.pingInterval)
     timer.setEventHandler { [weak self] in
       guard let self = self, self.connectionState == .active else { return }
-      // Check pong timeout
-      if let last = self.lastPongTime, Date().timeIntervalSince(last) > Self.pongTimeout {
-        os_log("Pong timeout", log: log, type: .error)
+      // Only timeout if we sent a ping and got no pong back within pongTimeout.
+      if let sent = self.lastPingSentTime,
+        let pong = self.lastPongTime, pong < sent,
+        Date().timeIntervalSince(sent) > Self.pongTimeout
+      {
+        FileLogger.error("Pong timeout", category: cat)
         self.appendEntry(
           .deviceDisconnected, "Pong timeout",
           status: .failed, error: "No pong for \(Int(Self.pongTimeout))s")
         self.handleDisconnect()
         return
       }
+      FileLogger.debug("Sending ping", category: cat)
+      self.lastPingSentTime = Date()
       self.send(BuzzelProtocol.createPing())
     }
     pingTimer = timer
@@ -215,8 +247,6 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   private func stopKeepalive() {
     pingTimer?.cancel()
     pingTimer = nil
-    pongTimeoutWork?.cancel()
-    pongTimeoutWork = nil
   }
 
   // MARK: - Reliable Delivery
@@ -238,13 +268,13 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       guard let self = self else { return }
       if self.pendingAckSeq != nil && self.pendingRetries < 3 {
         self.pendingRetries += 1
-        os_log(
-          "Retry command seq=%d, attempt=%d", log: log, type: .info,
-          self.pendingAckSeq ?? 0, self.pendingRetries)
+        FileLogger.info(
+          "Retry command seq=\(self.pendingAckSeq ?? 0), attempt=\(self.pendingRetries)",
+          category: cat)
         if let payload = self.retryPayload { self.send(payload) }
         self.startRetryTimer()
       } else if self.pendingRetries >= 3 {
-        os_log("Command failed after 3 retries", log: log, type: .error)
+        FileLogger.error("Command failed after 3 retries", category: cat)
         self.handleDisconnect()
       }
     }
@@ -275,39 +305,67 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   // MARK: - Connection
 
   func start() {
-    os_log("TransportManager started", log: log, type: .info)
+    FileLogger.info("TransportManager started", category: cat)
     let prefer = AppStore.shared.transportMethod
     startFailover(prefer: prefer)
   }
 
   func stop() {
-    os_log("TransportManager stopped", log: log, type: .info)
-    send(BuzzelProtocol.createGoodbye())
+    FileLogger.info("TransportManager stopping", category: cat)
+    let wasActive = connectionState == .active || connectionState == .handshaking
+    if wasActive {
+      send(BuzzelProtocol.createGoodbye())
+    }
     transitionTo(.idle)
-    stopCurrentTransport()
+    cancelFailover()
+    if wasActive {
+      // Delay teardown so goodbye has time to be delivered
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        self?.stopCurrentTransport()
+        FileLogger.info("TransportManager stopped", category: cat)
+      }
+    } else {
+      stopCurrentTransport()
+      FileLogger.info("TransportManager stopped", category: cat)
+    }
   }
 
   func unpair() {
-    os_log("Unpair requested", log: log, type: .info)
-    if connectionState == .active { send(BuzzelProtocol.createUnpair()) }
+    FileLogger.info("Unpair requested (state=\(connectionState))", category: cat)
+    let hasLink = connectionState == .active || connectionState == .handshaking
+    if hasLink { send(BuzzelProtocol.createUnpair()) }
     hasBeenConnected = false
+    reconnectAttempts = 0
     transitionTo(.idle)
+    cancelFailover()
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
       self?.stopCurrentTransport()
     }
   }
 
   private func handleDisconnect() {
-    os_log("Handling disconnect", log: log, type: .info)
     transitionTo(.idle)
     stopCurrentTransport()
+    if hasBeenConnected {
+      reconnectAttempts += 1
+      if reconnectAttempts > Self.maxReconnectAttempts {
+        FileLogger.info(
+          "Max reconnect attempts reached (\(reconnectAttempts)), stopping",
+          category: cat)
+        reconnectAttempts = 0
+        return
+      }
+      FileLogger.info(
+        "Reconnect attempt \(reconnectAttempts)/\(Self.maxReconnectAttempts)",
+        category: cat)
+    }
     startFailover(prefer: AppStore.shared.transportMethod)
   }
 
   // MARK: - Pairing Mode
 
   func startPairingMode(sessionId: String, code: String) {
-    os_log("Entering pairing mode", log: log, type: .info)
+    FileLogger.info("Entering pairing mode", category: cat)
     pairingSessionId = sessionId
     pairingCode = code
     isPairing = false
@@ -316,20 +374,26 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   }
 
   func stopPairingMode() {
-    os_log("Exiting pairing mode", log: log, type: .info)
+    FileLogger.info("Exiting pairing mode", category: cat)
     pairingSessionId = nil
     pairingCode = nil
     isPairing = false
-    cancelFailover()
-    stopCurrentTransport()
-    transitionTo(.idle)
+    // If pairing succeeded the state is already .active — don't tear down the live connection.
+    if connectionState != .active {
+      cancelFailover()
+      stopCurrentTransport()
+      transitionTo(.idle)
+    }
   }
 
   // MARK: - Pairing
 
   private func handleIncomingPairingRequest(_ payload: Data) {
-    os_log("Pairing request received", log: log, type: .info)
-    guard let code = BuzzelProtocol.parsePairRequestCode(payload) else { return }
+    guard let code = BuzzelProtocol.parsePairRequestCode(payload) else {
+      FileLogger.error("Pairing request: failed to parse code", category: cat)
+      return
+    }
+    FileLogger.info("Pairing request received (code match=\(code == pairingCode))", category: cat)
 
     if code == pairingCode {
       send(BuzzelProtocol.createPairResponse(accepted: true))
@@ -356,22 +420,33 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   // MARK: - Message Handling
 
   private func send(_ data: Data) {
-    guard let transport = currentTransport else { return }
-    os_log("Send %d bytes via %{public}@", log: log, type: .debug, data.count, transport.rawValue)
+    guard let transport = currentTransport else {
+      FileLogger.debug("Send failed: no active transport", category: cat)
+      return
+    }
+    FileLogger.debug("Send \(data.count) bytes via \(transport.rawValue)", category: cat)
 
     switch transport {
     case .ble:
-      guard ble.isConnected else { return }
+      guard ble.isConnected else {
+        FileLogger.debug("BLE send failed: not connected", category: cat)
+        return
+      }
       _ = ble.send(data)
     case .wifi:
-      guard tcpServer.isConnected else { return }
+      guard tcpServer.isConnected else {
+        FileLogger.debug("WiFi send failed: not connected", category: cat)
+        return
+      }
       _ = tcpServer.send(data)
     }
   }
 
   private func handleIncoming(_ payload: Data) {
     guard let signalId = BuzzelProtocol.parseSignalId(payload) else { return }
-    os_log("Received signal 0x%02x (%d bytes)", log: log, type: .debug, signalId, payload.count)
+    FileLogger.debug(
+      "Received signal 0x\(String(format: "%02x", signalId)) (\(payload.count) bytes)",
+      category: cat)
 
     if connectionState == .active { lastPongTime = Date() }
 
@@ -396,6 +471,9 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       if connectionState == .handshaking {
         transitionTo(.active)
         onDeviceReady?()
+      } else {
+        FileLogger.info(
+          "Ignoring ready signal in state \(connectionState)", category: cat)
       }
 
     case Signal.ping:
@@ -406,7 +484,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
     case Signal.ack:
       if let seq = BuzzelProtocol.parseAckSeq(payload), seq == pendingAckSeq {
-        os_log("Ack received for seq=%d", log: log, type: .debug, seq)
+        FileLogger.debug("Ack received for seq=\(seq)", category: cat)
         pendingAckSeq = nil
         retryPayload = nil
         cancelRetry()
@@ -427,12 +505,13 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       }
 
     default:
-      os_log("Unknown signal 0x%02x", log: log, type: .error, signalId)
+      FileLogger.error("Unknown signal 0x\(String(format: "%02x", signalId))", category: cat)
     }
   }
 
   private func handleCommand(_ cmd: BuzzelProtocol.Command) {
-    os_log("Command 0x%02x seq=%d", log: log, type: .debug, cmd.cmd, cmd.seq)
+    FileLogger.debug(
+      "Command 0x\(String(format: "%02x", cmd.cmd)) seq=\(cmd.seq)", category: cat)
     // All command IDs reserved — dispatch as features are added
   }
 
@@ -440,23 +519,43 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
   private func transportDidConnect(_ transport: Transport) {
     let label = transport == .ble ? "BLE" : "WiFi"
-    os_log("%{public}@ connected", log: log, type: .info, label)
+    let isPairing = pairingSessionId != nil
+    FileLogger.info(
+      "\(label) connected (pairing=\(isPairing))", category: cat)
     appendEntry(.deviceConnected, "Connected to \(deviceName) via \(label)")
     currentTransport = transport
     transitionTo(.handshaking)
-    if pairingSessionId == nil { send(BuzzelProtocol.createReady()) }
+    if !isPairing {
+      FileLogger.debug("Sending ready signal", category: cat)
+      send(BuzzelProtocol.createReady())
+    } else {
+      FileLogger.debug("Waiting for pair request from \(deviceName)", category: cat)
+      DispatchQueue.main.async { self.isPairing = true }
+    }
   }
 
   private func transportDidDisconnect(_ transport: Transport) {
     let label = transport == .ble ? "BLE" : "WiFi"
-    os_log("%{public}@ disconnected", log: log, type: .info, label)
+    FileLogger.info(
+      "\(label) disconnected (state=\(connectionState), current=\(currentTransport?.rawValue ?? "none"))",
+      category: cat)
     appendEntry(.deviceDisconnected, "\(label) disconnected from \(deviceName)")
-    if connectionState == .active && currentTransport == transport { handleDisconnect() }
+    guard currentTransport == transport else { return }
+    switch connectionState {
+    case .connecting:
+      // Transport failed to connect — advance to next failover step
+      FileLogger.info("Transport connect failed, advancing failover", category: cat)
+      failoverIndex += 1
+      tryNextFailoverStep()
+    case .handshaking, .active:
+      handleDisconnect()
+    case .idle:
+      break
+    }
   }
 
   private func transportDidReceiveData(_ data: Data, via transport: Transport) {
-    os_log(
-      "Received %d bytes via %{public}@", log: log, type: .debug, data.count, transport.rawValue)
+    FileLogger.debug("Received \(data.count) bytes via \(transport.rawValue)", category: cat)
     handleIncoming(data)
   }
 

@@ -15,7 +15,7 @@ import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.content.Context
 import android.os.ParcelUuid
-import android.util.Log
+import com.buzzel.debug.FileLogger
 import com.buzzel.protocol.BleUuids
 import com.buzzel.protocol.Protocol
 import java.util.concurrent.LinkedBlockingQueue
@@ -55,12 +55,12 @@ class BleGattServer(
                 newState: Int,
             ) {
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    Log.d(TAG, "Device connected: ${device.address}")
+                    FileLogger.d(TAG, "Device connected: ${device.address}")
                     connectedDevice = device
                     onConnectionChanged(true)
                     stopAdvertising()
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    Log.d(TAG, "Device disconnected: ${device.address}")
+                    FileLogger.d(TAG, "Device disconnected: ${device.address}")
                     if (connectedDevice?.address == device.address) {
                         connectedDevice = null
                         negotiatedMtu = DEFAULT_MTU
@@ -129,7 +129,7 @@ class BleGattServer(
                 device: BluetoothDevice,
                 mtu: Int,
             ) {
-                Log.d(TAG, "MTU changed: $mtu")
+                FileLogger.d(TAG, "MTU changed: $mtu")
                 negotiatedMtu = mtu
             }
 
@@ -137,7 +137,7 @@ class BleGattServer(
                 device: BluetoothDevice,
                 status: Int,
             ) {
-                Log.d(TAG, "Notification sent, status=$status")
+                FileLogger.d(TAG, "Notification sent, status=$status")
                 notificationSentSignal.offer(status)
             }
         }
@@ -150,7 +150,7 @@ class BleGattServer(
             recvBuffer += data
             recvBuffer =
                 FrameCodec.extractFrames(recvBuffer, bleMaxPayload) { payload ->
-                    Log.d(TAG, "Frame received: ${payload.size} bytes")
+                    FileLogger.d(TAG, "Frame received: ${payload.size} bytes")
                     onMessageReceived(payload)
                 }
         }
@@ -161,21 +161,24 @@ class BleGattServer(
             bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
             val adapter = bluetoothManager?.adapter
             if (adapter == null || !adapter.isEnabled) {
-                Log.e(TAG, "Bluetooth not available or not enabled")
+                FileLogger.e(TAG, "Bluetooth not available or not enabled")
+                onConnectionChanged(false)
                 return
             }
 
             gattServer = bluetoothManager?.openGattServer(context, gattCallback)
             if (gattServer == null) {
-                Log.e(TAG, "Failed to open GATT server")
+                FileLogger.e(TAG, "Failed to open GATT server")
+                onConnectionChanged(false)
                 return
             }
 
             setupService()
             startAdvertising()
-            Log.d(TAG, "BLE GATT server started")
+            FileLogger.d(TAG, "BLE GATT server started")
         } catch (e: SecurityException) {
-            Log.e(TAG, "BLE permissions not granted", e)
+            FileLogger.e(TAG, "BLE permissions not granted", e)
+            onConnectionChanged(false)
         }
     }
 
@@ -184,11 +187,11 @@ class BleGattServer(
             stopAdvertising()
             gattServer?.close()
         } catch (e: SecurityException) {
-            Log.e(TAG, "BLE stop failed", e)
+            FileLogger.e(TAG, "BLE stop failed", e)
         }
         gattServer = null
         connectedDevice = null
-        Log.d(TAG, "BLE GATT server stopped")
+        FileLogger.d(TAG, "BLE GATT server stopped")
     }
 
     fun disconnectDevice() {
@@ -196,7 +199,7 @@ class BleGattServer(
         try {
             gattServer?.cancelConnection(device)
         } catch (e: SecurityException) {
-            Log.e(TAG, "BLE disconnect failed", e)
+            FileLogger.e(TAG, "BLE disconnect failed", e)
         }
         connectedDevice = null
         negotiatedMtu = DEFAULT_MTU
@@ -211,7 +214,7 @@ class BleGattServer(
 
     fun setLowPower(enabled: Boolean) {
         if (lowPower == enabled) return
-        Log.d(TAG, "Low power mode: $enabled")
+        FileLogger.d(TAG, "Low power mode: $enabled")
         lowPower = enabled
         if (isAdvertising) {
             stopAdvertising()
@@ -227,24 +230,24 @@ class BleGattServer(
 
         val chunkSize = (negotiatedMtu - ATT_OVERHEAD).coerceAtLeast(MIN_CHUNK_SIZE)
         val chunks = frame.toList().chunked(chunkSize)
-        Log.d(TAG, "Sending ${data.size} bytes in ${chunks.size} chunks (mtu=$negotiatedMtu)")
+        FileLogger.d(TAG, "Sending ${data.size} bytes in ${chunks.size} chunks (mtu=$negotiatedMtu)")
 
         for ((i, chunk) in chunks.withIndex()) {
             notificationSentSignal.clear()
             characteristic.value = chunk.toByteArray()
             val sent = gattServer?.notifyCharacteristicChanged(device, characteristic, false)
             if (sent != true) {
-                Log.w(TAG, "Failed to send notification chunk $i/${chunks.size}")
+                FileLogger.w(TAG, "Failed to send notification chunk $i/${chunks.size}")
                 return false
             }
             if (i < chunks.size - 1) {
                 val status = notificationSentSignal.poll(NOTIFICATION_TIMEOUT_SEC, TimeUnit.SECONDS)
                 if (status == null) {
-                    Log.w(TAG, "Timeout waiting for onNotificationSent at chunk $i/${chunks.size}")
+                    FileLogger.w(TAG, "Timeout waiting for onNotificationSent at chunk $i/${chunks.size}")
                     return false
                 }
                 if (status != BluetoothGatt.GATT_SUCCESS) {
-                    Log.w(TAG, "Notification failed with status $status at chunk $i/${chunks.size}")
+                    FileLogger.w(TAG, "Notification failed with status $status at chunk $i/${chunks.size}")
                     return false
                 }
             }
@@ -275,7 +278,7 @@ class BleGattServer(
             }
 
         gattServer?.addService(service)
-        Log.d(TAG, "GATT service configured")
+        FileLogger.d(TAG, "GATT service configured")
     }
 
     private fun startAdvertising() {
@@ -326,11 +329,11 @@ class BleGattServer(
     private val advertiseCallback =
         object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings) {
-                Log.d(TAG, "BLE advertising started (lowPower=$lowPower)")
+                FileLogger.d(TAG, "BLE advertising started (lowPower=$lowPower)")
             }
 
             override fun onStartFailure(errorCode: Int) {
-                Log.e(TAG, "BLE advertising failed: $errorCode")
+                FileLogger.e(TAG, "BLE advertising failed: $errorCode")
             }
         }
 }

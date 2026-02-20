@@ -1,7 +1,7 @@
 package com.buzzel.transport
 
 import android.content.Context
-import android.util.Log
+import com.buzzel.debug.FileLogger
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -49,7 +49,7 @@ class TransportManager(
             }
 
     fun startBle() {
-        Log.i(TAG, "Starting BLE transport")
+        FileLogger.i(TAG, "Starting BLE transport")
         bleServer.start()
     }
 
@@ -57,7 +57,7 @@ class TransportManager(
         host: String,
         port: Int,
     ) {
-        Log.i(TAG, "Starting WiFi transport: $host:$port")
+        FileLogger.i(TAG, "Starting WiFi transport: $host:$port")
         stopWifiClient()
         val client =
             TcpClient(
@@ -76,20 +76,20 @@ class TransportManager(
     }
 
     fun stopWifiClient() {
-        Log.d(TAG, "Stopping WiFi")
+        FileLogger.d(TAG, "Stopping WiFi")
         tcpClient?.stop()
         tcpClient = null
         if (activeTransport == ActiveTransport.WIFI) activeTransport = ActiveTransport.NONE
     }
 
     fun stopBle() {
-        Log.d(TAG, "Stopping BLE")
+        FileLogger.d(TAG, "Stopping BLE")
         bleServer.stop()
         if (activeTransport == ActiveTransport.BLE) activeTransport = ActiveTransport.NONE
     }
 
     fun stopAll() {
-        Log.i(TAG, "Stopping all transports")
+        FileLogger.i(TAG, "Stopping all transports")
         bleServer.stop()
         tcpClient?.stop()
         tcpClient = null
@@ -97,53 +97,63 @@ class TransportManager(
     }
 
     fun sendAndStop(payload: ByteArray) {
-        Log.i(TAG, "Sending final payload and stopping")
+        FileLogger.i(TAG, "Sending final payload (${payload.size} bytes) via $activeTransport and stopping")
         val latch = CountDownLatch(1)
         sendExecutor.execute {
-            when (activeTransport) {
-                ActiveTransport.BLE -> {
-                    if (bleServer.isConnected) bleServer.sendData(payload)
-                }
+            val sent =
+                when (activeTransport) {
+                    ActiveTransport.BLE -> {
+                        if (bleServer.isConnected) bleServer.sendData(payload) else false
+                    }
 
-                ActiveTransport.WIFI -> {
-                    tcpClient?.sendData(payload)
-                }
+                    ActiveTransport.WIFI -> {
+                        tcpClient?.sendData(payload) ?: false
+                    }
 
-                ActiveTransport.NONE -> {}
-            }
+                    ActiveTransport.NONE -> false
+                }
+            FileLogger.d(TAG, "Final payload sent=$sent")
             latch.countDown()
         }
-        latch.await(2, TimeUnit.SECONDS)
+        val delivered = latch.await(2, TimeUnit.SECONDS)
+        FileLogger.d(TAG, "sendAndStop latch: delivered=$delivered")
         stopAll()
     }
 
     fun disconnectBle() {
-        Log.d(TAG, "Disconnecting BLE device")
+        FileLogger.d(TAG, "Disconnecting BLE device")
         bleServer.disconnectDevice()
     }
 
     fun setBleLowPower(enabled: Boolean) {
-        Log.d(TAG, "BLE low power: $enabled")
+        FileLogger.d(TAG, "BLE low power: $enabled")
         bleServer.setLowPower(enabled)
     }
 
     fun send(payload: ByteArray): Boolean {
-        Log.d(TAG, "Send via $activeTransport: ${payload.size} bytes")
+        FileLogger.d(TAG, "Send via $activeTransport: ${payload.size} bytes")
         return when (activeTransport) {
             ActiveTransport.BLE -> {
-                if (!bleServer.isConnected) return false
+                if (!bleServer.isConnected) {
+                    FileLogger.w(TAG, "BLE send failed: not connected")
+                    return false
+                }
                 sendExecutor.execute { bleServer.sendData(payload) }
                 true
             }
 
             ActiveTransport.WIFI -> {
-                val client = tcpClient ?: return false
-                if (!client.isConnected) return false
+                val client = tcpClient
+                if (client == null || !client.isConnected) {
+                    FileLogger.w(TAG, "WiFi send failed: not connected")
+                    return false
+                }
                 sendExecutor.execute { client.sendData(payload) }
                 true
             }
 
             ActiveTransport.NONE -> {
+                FileLogger.w(TAG, "Send failed: no active transport")
                 false
             }
         }

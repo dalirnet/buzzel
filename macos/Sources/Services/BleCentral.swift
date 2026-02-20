@@ -1,8 +1,7 @@
 import CoreBluetooth
 import Foundation
-import os.log
 
-private let log = OSLog(subsystem: "com.buzzel", category: "BleCentral")
+private let cat = "BleCentral"
 
 protocol BleCentralDelegate: AnyObject {
   func bleDidConnect()
@@ -18,11 +17,13 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
 
   @Published var discoveredDevices: [DiscoveredDevice] = []
   @Published var bluetoothAuthorization: CBManagerAuthorization = CBCentralManager.authorization
+  @Published var bluetoothPoweredOff = false
 
   private var centralManager: CBCentralManager?
   private var peripheral: CBPeripheral?
   private var dataCharacteristic: CBCharacteristic?
   private var isDiscoveryMode = false
+  private var isStopped = false
 
   // Reassembly buffer for length-prefixed frames
   private var recvBuffer = Data()
@@ -47,7 +48,8 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   // MARK: - Public API
 
   func start() {
-    os_log("start", log: log, type: .debug)
+    FileLogger.debug("start", category: cat)
+    isStopped = false
     if centralManager == nil {
       centralManager = CBCentralManager(delegate: self, queue: nil)
     } else if centralManager?.state == .poweredOn {
@@ -87,7 +89,8 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   }
 
   func stop() {
-    os_log("stop", log: log, type: .debug)
+    FileLogger.debug("stop", category: cat)
+    isStopped = true
     isDiscoveryMode = false
     discoveredDevices = []
     centralManager?.stopScan()
@@ -98,7 +101,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   }
 
   func disconnect() {
-    os_log("BLE disconnect requested", log: log, type: .debug)
+    FileLogger.debug("BLE disconnect requested", category: cat)
     if let p = peripheral {
       centralManager?.cancelPeripheralConnection(p)
     }
@@ -113,7 +116,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   func send(_ data: Data) -> Bool {
     guard peripheral != nil, dataCharacteristic != nil else { return false }
     let frame = FrameCodec.encode(data, maxPayload: bleMaxPayload)
-    os_log("BLE send: %d bytes (%d frame bytes)", log: log, type: .debug, data.count, frame.count)
+    FileLogger.debug("BLE send: \(data.count) bytes (\(frame.count) frame bytes)", category: cat)
     writeQueue.append(frame)
     drainWriteQueue()
     return true
@@ -124,7 +127,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
       return
     }
     guard !writeQueue.isEmpty else { return }
-    os_log("Draining write queue: %d items", log: log, type: .debug, writeQueue.count)
+    FileLogger.debug("Draining write queue: \(writeQueue.count) items", category: cat)
     let frame = writeQueue.removeFirst()
     isWriting = true
     peripheral.writeValue(frame, for: characteristic, type: .withResponse)
@@ -133,9 +136,11 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   // MARK: - CBCentralManagerDelegate
 
   func centralManagerDidUpdateState(_ central: CBCentralManager) {
-    os_log(
-      "centralManagerDidUpdateState: %{public}d", log: log, type: .debug, central.state.rawValue)
-    DispatchQueue.main.async { self.bluetoothAuthorization = CBCentralManager.authorization }
+    FileLogger.debug("centralManagerDidUpdateState: \(central.state.rawValue)", category: cat)
+    DispatchQueue.main.async {
+      self.bluetoothAuthorization = CBCentralManager.authorization
+      self.bluetoothPoweredOff = central.state == .poweredOff
+    }
     if central.state == .poweredOn {
       if isDiscoveryMode {
         central.scanForPeripherals(
@@ -169,9 +174,9 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
         )
       }
     } else {
-      os_log(
-        "didDiscover: %{public}@ (%{public}@)", log: log, type: .debug,
-        peripheral.identifier.uuidString, peripheral.name ?? "unnamed")
+      FileLogger.debug(
+        "didDiscover: \(peripheral.identifier.uuidString) (\(peripheral.name ?? "unnamed"))",
+        category: cat)
       self.peripheral = peripheral
       peripheral.delegate = self
       central.stopScan()
@@ -180,7 +185,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   }
 
   func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-    os_log("didConnect: %{public}@", log: log, type: .debug, peripheral.identifier.uuidString)
+    FileLogger.debug("didConnect: \(peripheral.identifier.uuidString)", category: cat)
     peripheral.delegate = self
     peripheral.discoverServices([serviceUUID])
   }
@@ -188,10 +193,11 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   func centralManager(
     _ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?
   ) {
-    os_log(
-      "didFailToConnect: %{public}@", log: log, type: .error,
-      error?.localizedDescription ?? "unknown")
+    FileLogger.error(
+      "didFailToConnect: \(error?.localizedDescription ?? "unknown") (stopped=\(isStopped))",
+      category: cat)
     resetConnectionState()
+    if isStopped { return }
     if !isDiscoveryMode {
       scheduleReconnect()
     }
@@ -200,9 +206,11 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   func centralManager(
     _ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?
   ) {
-    os_log(
-      "didDisconnect: %{public}@", log: log, type: .debug, error?.localizedDescription ?? "clean")
+    FileLogger.debug(
+      "didDisconnect: \(error?.localizedDescription ?? "clean") (stopped=\(isStopped))",
+      category: cat)
     resetConnectionState()
+    if isStopped { return }
     delegate?.bleDidDisconnect()
     if !isDiscoveryMode {
       scheduleReconnect()
@@ -219,9 +227,9 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   }
 
   private func scheduleReconnect() {
-    os_log("scheduleReconnect", log: log, type: .debug)
+    FileLogger.debug("scheduleReconnect", category: cat)
     DispatchQueue.main.asyncAfter(deadline: .now() + Self.reconnectDelay) { [weak self] in
-      guard let self = self else { return }
+      guard let self = self, !self.isStopped else { return }
       self.centralManager?.scanForPeripherals(withServices: [self.serviceUUID], options: nil)
     }
   }
@@ -229,10 +237,10 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   // MARK: - CBPeripheralDelegate
 
   func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-    os_log(
-      "didDiscoverServices: %{public}d", log: log, type: .debug, peripheral.services?.count ?? 0)
+    FileLogger.debug(
+      "didDiscoverServices: \(peripheral.services?.count ?? 0)", category: cat)
     guard let service = peripheral.services?.first(where: { $0.uuid == serviceUUID }) else {
-      os_log("Service not found", log: log, type: .error)
+      FileLogger.error("Service not found", category: cat)
       return
     }
     peripheral.discoverCharacteristics([dataUUID], for: service)
@@ -241,19 +249,15 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   func peripheral(
     _ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?
   ) {
-    os_log(
-      "didDiscoverCharacteristics: %{public}d", log: log, type: .debug,
-      service.characteristics?.count ?? 0)
+    FileLogger.debug(
+      "didDiscoverCharacteristics: \(service.characteristics?.count ?? 0)", category: cat)
     for char in service.characteristics ?? [] {
       if char.uuid == dataUUID {
         dataCharacteristic = char
-        // Read negotiated MTU from peripheral
         let mtuPayload = peripheral.maximumWriteValueLength(for: .withResponse)
         negotiatedMtu = mtuPayload + BuzzelProtocol.attOverhead
-        os_log(
-          "BLE negotiated MTU: %d (write payload: %d)", log: log, type: .debug, negotiatedMtu,
-          mtuPayload)
-        // Subscribe to notifications on data char
+        FileLogger.debug(
+          "BLE negotiated MTU: \(negotiatedMtu) (write payload: \(mtuPayload))", category: cat)
         peripheral.setNotifyValue(true, for: char)
       }
     }
@@ -263,9 +267,9 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     _ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic,
     error: Error?
   ) {
-    os_log(
-      "Notification state for %{public}@: %{public}@", log: log, type: .debug,
-      characteristic.uuid.uuidString, error?.localizedDescription ?? "ok")
+    FileLogger.debug(
+      "Notification state for \(characteristic.uuid): \(error?.localizedDescription ?? "ok")",
+      category: cat)
     if characteristic.uuid == dataUUID && error == nil {
       delegate?.bleDidConnect()
     }
@@ -275,7 +279,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     _ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?
   ) {
     guard let data = characteristic.value else { return }
-    os_log("BLE received %d bytes", log: log, type: .debug, data.count)
+    FileLogger.debug("BLE received \(data.count) bytes", category: cat)
     recvBuffer.append(data)
     FrameCodec.extractFrames(from: &recvBuffer, maxPayload: bleMaxPayload) { [weak self] payload in
       self?.delegate?.bleDidReceiveData(payload)
@@ -286,7 +290,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     _ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?
   ) {
     if let error = error {
-      os_log("BLE write error: %{public}@", log: log, type: .error, error.localizedDescription)
+      FileLogger.error("BLE write error: \(error.localizedDescription)", category: cat)
     }
     isWriting = false
     drainWriteQueue()
