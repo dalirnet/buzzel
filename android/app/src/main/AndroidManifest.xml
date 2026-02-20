@@ -58,12 +58,6 @@
             android:theme="@style/Theme.Buzzel"
         />
 
-        <activity
-            android:name=".ui.ScanActivity"
-            android:exported="false"
-            android:theme="@style/Theme.Buzzel"
-        />
-
         <service
             android:name=".service.BuzzelService"
             android:exported="false"
