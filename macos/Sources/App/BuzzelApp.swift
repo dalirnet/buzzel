@@ -1,4 +1,3 @@
-import Combine
 import SwiftUI
 
 // MARK: - App Entry
@@ -35,7 +34,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   private let transportManager = TransportManager.shared
 
   private var statusBar: StatusBarController!
-  private var cancellables = Set<AnyCancellable>()
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     statusBar = StatusBarController(
@@ -44,11 +42,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       onLeftClick: { [weak self] in self?.showMainWindow() }
     )
     configureMainWindow()
-    observeBluetoothAuth()
 
-    if store.pairedDevice != nil && transportManager.bleAuthorized {
-      transportManager.start()
-    }
+    // No auto-reconnect on launch — user must scan QR each time
+    store.pairedDevice = nil
+    store.save()
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -88,20 +85,5 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
   func windowShouldClose(_ sender: NSWindow) -> Bool {
     sender.orderOut(nil)
     return false
-  }
-
-  // MARK: - Bluetooth Authorization
-
-  private func observeBluetoothAuth() {
-    transportManager.$bleAuthorized
-      .receive(on: DispatchQueue.main)
-      .removeDuplicates()
-      .sink { [weak self] authorized in
-        guard let self = self, authorized, self.store.pairedDevice != nil else { return }
-        if self.transportManager.connectionState == .idle {
-          self.transportManager.start()
-        }
-      }
-      .store(in: &cancellables)
   }
 }

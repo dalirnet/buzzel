@@ -144,7 +144,7 @@ class BuzzelService : Service() {
 
         val runnable =
             Runnable {
-                if (state != ConnectionState.ACTIVE) {
+                if (state == ConnectionState.CONNECTING) {
                     FileLogger.i(TAG, "Failover timeout: ${step.transport} did not connect in ${FAILOVER_DELAY_MS / 1000}s, advancing")
                     advanceFailover()
                 }
@@ -166,6 +166,15 @@ class BuzzelService : Service() {
 
     private fun handleDisconnect() {
         transitionTo(ConnectionState.IDLE)
+
+        // Only reconnect when we have valid pairing data
+        val hasPairingContext = app.configStore.pairingCode != null
+        if (!hasPairingContext) {
+            FileLogger.i(TAG, "No pairing context — not reconnecting, stopping service")
+            stopSelf()
+            return
+        }
+
         if (app.hasBeenConnected) {
             reconnectAttempts++
             if (reconnectAttempts > maxReconnectAttempts) {
@@ -188,23 +197,41 @@ class BuzzelService : Service() {
         if (oldState == newState && newState != ConnectionState.ACTIVE) return
         FileLogger.i(TAG, "State: $oldState → $newState")
         state = newState
+
+        // Set properties BEFORE notifying listeners so UI sees the correct values
+        when (newState) {
+            ConnectionState.IDLE -> {
+                app.isDeviceConnected = false
+                app.connectedDeviceName = null
+            }
+            ConnectionState.CONNECTING -> {
+                app.isDeviceConnected = false
+            }
+            ConnectionState.HANDSHAKING -> {
+                app.isDeviceConnected = false
+            }
+            ConnectionState.ACTIVE -> {
+                app.isDeviceConnected = true
+                app.hasBeenConnected = true
+                app.connectedDeviceName = deviceName
+            }
+        }
+
+        // Notify listeners — triggers UI refresh
         app.serviceConnectionState = newState
 
+        // Side effects after notification
         when (newState) {
             ConnectionState.IDLE -> {
                 handler.removeCallbacks(pingRunnable)
                 cancelHandshakeTimeout()
                 cancelRetry()
-                app.isDeviceConnected = false
             }
 
-            ConnectionState.CONNECTING -> {
-                app.isDeviceConnected = false
-            }
+            ConnectionState.CONNECTING -> {}
 
             ConnectionState.HANDSHAKING -> {
                 startHandshakeTimeout()
-                app.isDeviceConnected = false
             }
 
             ConnectionState.ACTIVE -> {
@@ -212,8 +239,6 @@ class BuzzelService : Service() {
                 cancelFailover()
                 lastPongTime = System.currentTimeMillis()
                 lastPingSentTime = 0L
-                app.isDeviceConnected = true
-                app.hasBeenConnected = true
                 reconnectAttempts = 0
                 handler.removeCallbacks(pingRunnable)
                 handler.postDelayed(pingRunnable, PING_INTERVAL_MS)
@@ -392,6 +417,10 @@ class BuzzelService : Service() {
         if (!started) {
             started = true
             startFailover()
+        } else if (state == ConnectionState.IDLE && app.configStore.pairingCode != null) {
+            // Service already running but idle — user tapped power to reconnect
+            FileLogger.i(TAG, "Already started but idle — restarting failover")
+            startFailover()
         }
         return START_NOT_STICKY
     }
@@ -409,6 +438,8 @@ class BuzzelService : Service() {
     override fun onDestroy() {
         FileLogger.i(TAG, "Service destroyed (state=$state)")
         val wasActive = state == ConnectionState.ACTIVE || state == ConnectionState.HANDSHAKING
+        app.hasBeenConnected = false
+        app.configStore.clearPairing()
         transitionTo(ConnectionState.IDLE)
         handler.removeCallbacks(pingRunnable)
         cancelHandshakeTimeout()
@@ -459,13 +490,18 @@ class BuzzelService : Service() {
                         direction = LogDirection.INCOMING,
                     ),
                 )
-                handleDisconnect()
+                app.hasBeenConnected = false
+                app.configStore.clearPairing()
+                transitionTo(ConnectionState.IDLE)
+                cancelFailover()
+                transport.stopAll()
+                stopSelf()
             }
 
             Signal.UNPAIR -> {
                 FileLogger.i(TAG, "Received unpair signal, clearing pairing data")
-                app.configStore.clearPairing()
                 app.hasBeenConnected = false
+                app.configStore.clearPairing()
                 app.appendLogEntry(
                     LogEntry(
                         type = LogEventType.DEVICE_DISCONNECTED,
@@ -474,6 +510,9 @@ class BuzzelService : Service() {
                     ),
                 )
                 transitionTo(ConnectionState.IDLE)
+                cancelFailover()
+                transport.stopAll()
+                stopSelf()
             }
 
             Signal.PING -> {

@@ -110,7 +110,9 @@ class TransportManager(
                         tcpClient?.sendData(payload) ?: false
                     }
 
-                    ActiveTransport.NONE -> false
+                    ActiveTransport.NONE -> {
+                        false
+                    }
                 }
             FileLogger.d(TAG, "Final payload sent=$sent")
             latch.countDown()

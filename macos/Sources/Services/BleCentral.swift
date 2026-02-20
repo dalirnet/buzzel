@@ -24,6 +24,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   private var dataCharacteristic: CBCharacteristic?
   private var isDiscoveryMode = false
   private var isStopped = false
+  private var reconnectWork: DispatchWorkItem?
 
   // Reassembly buffer for length-prefixed frames
   private var recvBuffer = Data()
@@ -49,6 +50,8 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
 
   func start() {
     FileLogger.debug("start", category: cat)
+    reconnectWork?.cancel()
+    reconnectWork = nil
     isStopped = false
     if centralManager == nil {
       centralManager = CBCentralManager(delegate: self, queue: nil)
@@ -90,6 +93,8 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
 
   func stop() {
     FileLogger.debug("stop", category: cat)
+    reconnectWork?.cancel()
+    reconnectWork = nil
     isStopped = true
     isDiscoveryMode = false
     discoveredDevices = []
@@ -228,10 +233,13 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
 
   private func scheduleReconnect() {
     FileLogger.debug("scheduleReconnect", category: cat)
-    DispatchQueue.main.asyncAfter(deadline: .now() + Self.reconnectDelay) { [weak self] in
+    reconnectWork?.cancel()
+    let work = DispatchWorkItem { [weak self] in
       guard let self = self, !self.isStopped else { return }
       self.centralManager?.scanForPeripherals(withServices: [self.serviceUUID], options: nil)
     }
+    reconnectWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + Self.reconnectDelay, execute: work)
   }
 
   // MARK: - CBPeripheralDelegate

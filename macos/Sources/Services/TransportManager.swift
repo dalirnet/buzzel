@@ -125,7 +125,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     }
 
     let work = DispatchWorkItem { [weak self] in
-      guard let self = self, self.connectionState != .active else { return }
+      guard let self = self, self.connectionState == .connecting else { return }
       FileLogger.info(
         "Failover timeout: \(step.transport.rawValue) did not connect in \(Self.failoverTimeout)s, advancing",
         category: cat)
@@ -163,9 +163,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       cancelHandshakeTimeout()
       cancelRetry()
     case .connecting:
-      DispatchQueue.main.async {
-        self.connectingTransport = self.currentTransport?.displayName ?? ""
-      }
+      connectingTransport = currentTransport?.displayName ?? ""
     case .handshaking:
       startHandshakeTimeout()
     case .active:
@@ -174,24 +172,18 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       lastPongTime = Date()
       lastPingSentTime = nil
       reconnectAttempts = 0
-      DispatchQueue.main.async {
-        self.hasBeenConnected = true
-        self.isConnected = true
-        self.activeTransport = self.currentTransport?.displayName ?? ""
-      }
+      hasBeenConnected = true
+      isConnected = true
+      activeTransport = currentTransport?.displayName ?? ""
       startKeepalive()
     }
 
     if newState != .active {
-      DispatchQueue.main.async {
-        self.isConnected = false
-        self.activeTransport = ""
-      }
+      isConnected = false
+      activeTransport = ""
     }
     if newState != .connecting {
-      DispatchQueue.main.async {
-        self.connectingTransport = ""
-      }
+      connectingTransport = ""
     }
   }
 
@@ -316,8 +308,11 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     if wasActive {
       send(BuzzelProtocol.createGoodbye())
     }
+    hasBeenConnected = false
     transitionTo(.idle)
     cancelFailover()
+    AppStore.shared.pairedDevice = nil
+    AppStore.shared.save()
     if wasActive {
       // Delay teardown so goodbye has time to be delivered
       DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -346,6 +341,14 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   private func handleDisconnect() {
     transitionTo(.idle)
     stopCurrentTransport()
+
+    // Only reconnect when we have an active session (pairing in progress or paired device exists)
+    let hasPairingContext = pairingSessionId != nil || AppStore.shared.pairedDevice != nil
+    guard hasPairingContext else {
+      FileLogger.info("No pairing context — not reconnecting", category: cat)
+      return
+    }
+
     if hasBeenConnected {
       reconnectAttempts += 1
       if reconnectAttempts > Self.maxReconnectAttempts {
@@ -397,23 +400,18 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
     if code == pairingCode {
       send(BuzzelProtocol.createPairResponse(accepted: true))
-      DispatchQueue.main.async { [weak self] in
-        guard let self = self else { return }
-        self.appendEntry(.pairingComplete, "Paired with \(self.deviceName)", direction: .incoming)
-        self.pairingCode = nil
-        self.pairingSessionId = nil
-        self.transitionTo(.active)
-        self.onPairingComplete?(self.deviceName)
-        self.isPairing = false
-        self.onDeviceReady?()
-      }
+      appendEntry(.pairingComplete, "Paired with \(deviceName)", direction: .incoming)
+      pairingCode = nil
+      pairingSessionId = nil
+      transitionTo(.active)
+      onPairingComplete?(deviceName)
+      isPairing = false
+      onDeviceReady?()
     } else {
       send(BuzzelProtocol.createPairResponse(accepted: false, reason: 0x01))
-      DispatchQueue.main.async { [weak self] in
-        self?.pairingError = "Invalid pairing code"
-        self?.appendEntry(
-          .pairingFailed, "Invalid pairing code", direction: .incoming, status: .failed)
-      }
+      pairingError = "Invalid pairing code"
+      appendEntry(
+        .pairingFailed, "Invalid pairing code", direction: .incoming, status: .failed)
     }
   }
 
@@ -492,11 +490,21 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
     case Signal.goodbye:
       appendEntry(.deviceDisconnected, "\(deviceName) said goodbye", direction: .incoming)
-      handleDisconnect()
+      hasBeenConnected = false
+      transitionTo(.idle)
+      cancelFailover()
+      stopCurrentTransport()
+      AppStore.shared.pairedDevice = nil
+      AppStore.shared.save()
 
     case Signal.unpair:
       appendEntry(.deviceDisconnected, "\(deviceName) unpaired", direction: .incoming)
+      hasBeenConnected = false
       transitionTo(.idle)
+      cancelFailover()
+      stopCurrentTransport()
+      AppStore.shared.pairedDevice = nil
+      AppStore.shared.save()
 
     case Signal.command:
       if let cmd = BuzzelProtocol.parseCommand(payload) {
@@ -530,7 +538,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       send(BuzzelProtocol.createReady())
     } else {
       FileLogger.debug("Waiting for pair request from \(deviceName)", category: cat)
-      DispatchQueue.main.async { self.isPairing = true }
+      self.isPairing = true
     }
   }
 
@@ -561,13 +569,13 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
   // MARK: - BleCentralDelegate
 
-  func bleDidConnect() { transportDidConnect(.ble) }
-  func bleDidDisconnect() { transportDidDisconnect(.ble) }
-  func bleDidReceiveData(_ data: Data) { transportDidReceiveData(data, via: .ble) }
+  func bleDidConnect() { DispatchQueue.main.async { self.transportDidConnect(.ble) } }
+  func bleDidDisconnect() { DispatchQueue.main.async { self.transportDidDisconnect(.ble) } }
+  func bleDidReceiveData(_ data: Data) { DispatchQueue.main.async { self.transportDidReceiveData(data, via: .ble) } }
 
   // MARK: - TcpServerDelegate
 
-  func tcpServerDidAcceptClient() { transportDidConnect(.wifi) }
-  func tcpServerDidDisconnect() { transportDidDisconnect(.wifi) }
-  func tcpServerDidReceiveData(_ data: Data) { transportDidReceiveData(data, via: .wifi) }
+  func tcpServerDidAcceptClient() { DispatchQueue.main.async { self.transportDidConnect(.wifi) } }
+  func tcpServerDidDisconnect() { DispatchQueue.main.async { self.transportDidDisconnect(.wifi) } }
+  func tcpServerDidReceiveData(_ data: Data) { DispatchQueue.main.async { self.transportDidReceiveData(data, via: .wifi) } }
 }
