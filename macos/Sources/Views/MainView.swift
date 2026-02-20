@@ -124,7 +124,7 @@ struct MainView: View {
             .frame(width: 94, height: 94)
           }
         }
-        .frame(width: 126, height: 126)
+        .frame(width: showQR ? 150 : 126, height: showQR ? 150 : 126)
       }
 
       Spacer()
@@ -140,7 +140,7 @@ struct MainView: View {
   @ViewBuilder
   private var qrContent: some View {
     if let matrix = qrMatrix {
-      CircularQRView(matrix: matrix, size: 120)
+      CircularQRView(matrix: matrix, size: 150)
     } else {
       VStack(spacing: 8) {
         Image(systemName: "wifi.slash")
