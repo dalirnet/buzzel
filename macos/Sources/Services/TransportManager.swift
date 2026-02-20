@@ -373,7 +373,19 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     pairingCode = code
     isPairing = false
     pairingError = nil
-    startFailover(prefer: AppStore.shared.transportMethod)
+    startBothTransports()
+  }
+
+  /// During pairing, run BLE scanning and TCP server simultaneously so
+  /// whichever transport the Android device uses connects immediately.
+  private func startBothTransports() {
+    cancelFailover()
+    stopCurrentTransport()
+    FileLogger.info("Starting both transports for pairing", category: cat)
+    transitionTo(.connecting)
+    currentTransport = nil
+    tcpServer.start(port: BuzzelProtocol.tcpPort)
+    ble.start()
   }
 
   func stopPairingMode() {
@@ -532,6 +544,11 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       "\(label) connected (pairing=\(isPairing))", category: cat)
     appendEntry(.deviceConnected, "Connected to \(deviceName) via \(label)")
     currentTransport = transport
+    // Stop the other transport now that we have a connection
+    switch transport {
+    case .ble: tcpServer.stop()
+    case .wifi: ble.stop()
+    }
     transitionTo(.handshaking)
     if !isPairing {
       FileLogger.debug("Sending ready signal", category: cat)
@@ -569,12 +586,26 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
   // MARK: - BleCentralDelegate
 
+  func bleDidStartConnecting() {
+    DispatchQueue.main.async {
+      FileLogger.info("BLE connecting to peripheral — cancelling failover timer", category: cat)
+      self.cancelFailover()
+    }
+  }
   func bleDidConnect() { DispatchQueue.main.async { self.transportDidConnect(.ble) } }
   func bleDidDisconnect() { DispatchQueue.main.async { self.transportDidDisconnect(.ble) } }
   func bleDidReceiveData(_ data: Data) { DispatchQueue.main.async { self.transportDidReceiveData(data, via: .ble) } }
 
   // MARK: - TcpServerDelegate
 
+  func tcpServerDidAcceptNewConnection() {
+    // Cancel failover as soon as a TCP client connects (before NWConnection reaches .ready).
+    // The connection will transition to .ready shortly and fire tcpServerDidAcceptClient.
+    DispatchQueue.main.async {
+      FileLogger.info("TCP new connection accepted — cancelling failover timer", category: cat)
+      self.cancelFailover()
+    }
+  }
   func tcpServerDidAcceptClient() { DispatchQueue.main.async { self.transportDidConnect(.wifi) } }
   func tcpServerDidDisconnect() { DispatchQueue.main.async { self.transportDidDisconnect(.wifi) } }
   func tcpServerDidReceiveData(_ data: Data) { DispatchQueue.main.async { self.transportDidReceiveData(data, via: .wifi) } }

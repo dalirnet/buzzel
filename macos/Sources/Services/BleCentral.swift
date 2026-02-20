@@ -4,6 +4,7 @@ import Foundation
 private let cat = "BleCentral"
 
 protocol BleCentralDelegate: AnyObject {
+  func bleDidStartConnecting()
   func bleDidConnect()
   func bleDidDisconnect()
   func bleDidReceiveData(_ data: Data)
@@ -185,6 +186,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
       self.peripheral = peripheral
       peripheral.delegate = self
       central.stopScan()
+      delegate?.bleDidStartConnecting()
       central.connect(peripheral, options: nil)
     }
   }

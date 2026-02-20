@@ -4,6 +4,7 @@ import Network
 private let cat = "TcpServer"
 
 protocol TcpServerDelegate: AnyObject {
+  func tcpServerDidAcceptNewConnection()
   func tcpServerDidAcceptClient()
   func tcpServerDidDisconnect()
   func tcpServerDidReceiveData(_ data: Data)
@@ -31,6 +32,7 @@ class TcpServer {
     listener?.newConnectionHandler = { [weak self] newConn in
       self?.connection?.cancel()
       self?.connection = newConn
+      self?.delegate?.tcpServerDidAcceptNewConnection()
       self?.setupConnection(newConn)
     }
     listener?.start(queue: queue)
