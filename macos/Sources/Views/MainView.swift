@@ -95,7 +95,9 @@ struct MainView: View {
         }
         .help("Back")
       } else {
-        Button { showSettings.toggle() } label: {
+        Button {
+          showSettings.toggle()
+        } label: {
           SVGIconView(
             paths: Self.iconSettings,
             size: 20,

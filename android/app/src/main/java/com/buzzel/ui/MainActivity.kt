@@ -120,6 +120,7 @@ class MainActivity : Activity() {
     }
 
     @Volatile private var scanning = false
+
     @Volatile private var processingFrame = false
 
     private fun dp(value: Int) = dp(this as Context, value)
@@ -147,9 +148,10 @@ class MainActivity : Activity() {
             }
 
         // If any permission shows rationale, we've asked before
-        permissionsEverRequested = REQUIRED_PERMISSIONS.any {
-            ActivityCompat.shouldShowRequestPermissionRationale(this, it)
-        }
+        permissionsEverRequested =
+            REQUIRED_PERMISSIONS.any {
+                ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+            }
 
         buildLayout()
         setContentView(rootLayout)
@@ -194,7 +196,14 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == PERMISSION_REQUEST) {
             val granted = permissions.zip(grantResults.toTypedArray())
-            FileLogger.i(TAG, "onPermissionResult: ${granted.joinToString { "${it.first.substringAfterLast('.')}=${if (it.second == PackageManager.PERMISSION_GRANTED) "OK" else "DENIED"}" }}")
+            FileLogger.i(
+                TAG,
+                "onPermissionResult: ${granted.joinToString {
+                    "${it.first.substringAfterLast(
+                        '.',
+                    )}=${if (it.second == PackageManager.PERMISSION_GRANTED) "OK" else "DENIED"}"
+                }}",
+            )
             if (hasAllPermissions()) {
                 FileLogger.i(TAG, "All permissions granted — proceeding")
                 promptEnableBluetooth()
@@ -207,9 +216,10 @@ class MainActivity : Activity() {
                 FileLogger.i(TAG, "Still missing: ${still.map { it.substringAfterLast('.') }}")
                 // Inside onRequestPermissionsResult, shouldShowRequestPermissionRationale
                 // reliably returns false only for "permanently denied" (Don't allow + don't ask again)
-                val permanentlyDenied = still.filter {
-                    !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
-                }
+                val permanentlyDenied =
+                    still.filter {
+                        !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+                    }
                 if (permanentlyDenied.size == still.size) {
                     FileLogger.i(TAG, "All remaining permanently denied — opening settings")
                     openAppSettings()
@@ -587,17 +597,21 @@ class MainActivity : Activity() {
         val items = mutableListOf<Pair<String, () -> Unit>>()
         for ((i, label) in options.withIndex()) {
             val display = if (i == selectedIndex) "$label  \u2022" else label
-            items.add(display to {
-                store.preferTransport = values[i]
-            })
+            items.add(
+                display to {
+                    store.preferTransport = values[i]
+                },
+            )
         }
         if (store.pairingCode != null) {
-            items.add("Unpair Device" to {
-                stopService(android.content.Intent(this, BuzzelService::class.java))
-                store.clearPairing()
-                app.hasBeenConnected = false
-                refreshState()
-            })
+            items.add(
+                "Unpair Device" to {
+                    stopService(android.content.Intent(this, BuzzelService::class.java))
+                    store.clearPairing()
+                    app.hasBeenConnected = false
+                    refreshState()
+                },
+            )
         }
 
         val builder = android.app.AlertDialog.Builder(this)
@@ -759,12 +773,20 @@ class MainActivity : Activity() {
 
             // Direction icon
             val iconColor = if (entry.status == com.buzzel.model.LogStatus.SUCCESS) AppColors.green else AppColors.red
-            val iconPath = when (entry.direction) {
-                com.buzzel.model.LogDirection.INCOMING -> ICON_ARROW_DOWN
-                com.buzzel.model.LogDirection.OUTGOING -> ICON_ARROW_UP
-                com.buzzel.model.LogDirection.LOCAL -> ICON_DOT
-            }
-            val iconMode = if (entry.direction == com.buzzel.model.LogDirection.LOCAL) SVGIconView.IconMode.FILL else SVGIconView.IconMode.STROKE
+            val iconPath =
+                when (entry.direction) {
+                    com.buzzel.model.LogDirection.INCOMING -> ICON_ARROW_DOWN
+                    com.buzzel.model.LogDirection.OUTGOING -> ICON_ARROW_UP
+                    com.buzzel.model.LogDirection.LOCAL -> ICON_DOT
+                }
+            val iconMode =
+                if (entry.direction ==
+                    com.buzzel.model.LogDirection.LOCAL
+                ) {
+                    SVGIconView.IconMode.FILL
+                } else {
+                    SVGIconView.IconMode.STROKE
+                }
             addView(
                 SVGIconView(context, iconPath, iconMode).apply {
                     this.iconColor = iconColor
@@ -830,9 +852,10 @@ class MainActivity : Activity() {
                     refreshState()
                 } else {
                     // Check if any are permanently denied (user tapped "Don't allow" before)
-                    val permanentlyDenied = missing.filter {
-                        !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
-                    }
+                    val permanentlyDenied =
+                        missing.filter {
+                            !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
+                        }
                     // shouldShowRequestPermissionRationale returns false for both "never asked"
                     // and "permanently denied". We use a flag to distinguish.
                     if (permissionsEverRequested && permanentlyDenied.size == missing.size) {

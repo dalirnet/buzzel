@@ -91,7 +91,7 @@ Base unit: **4**.
 | Header padding      | 16 x 12       | Horizontal x Vertical     |
 | Logo ↔ title gap    | 10            |                           |
 | Power button        | 94 in 126     | Centered in content frame |
-| QR code             | 120           | Circular                  |
+| QR code             | 150           | Circular                  |
 | Status line bottom  | 24            | Bottom padding            |
 | Status line padding | 16 x 8        | Horizontal x Vertical     |
 | Status line bg      | secondary 5%  | Capsule, single line      |
@@ -171,9 +171,9 @@ Three view states, navigated in-window (no separate windows):
 
 | View         | Title          | Badge       | Trailing Icon | Trailing Action |
 | ------------ | -------------- | ----------- | ------------- | --------------- |
-| Main         | "Buzzel"       | Device name | `qr-code`     | Open QR         |
-| QR Code      | "QR Code"      | —           | `undo-left`   | Back to Main    |
-| Activity Log | "Activity Log" | Entry count | `undo-left`   | Back to Main    |
+| Main         | "Buzzel"       | Device name | `settings`    | Open settings   |
+| Quick Setup  | "Quick Setup"  | —           | `zap`         | Back to Main    |
+| Activity Log | "Activity Log" | Entry count | `zap`         | Back to Main    |
 
 ### Header
 
@@ -181,7 +181,7 @@ Persistent across views, content updates in place.
 
 - **Left**: App logo (`icon.sm`) + title with typewriter animation + contextual badge
 - **Right**: Trailing icon button (`icon.md`)
-- QR icon at 30% opacity and disabled when connected or missing permissions
+- Main view: settings icon (gear). Sub-views (Quick Setup, Activity Log): zap icon
 - Badge: `secondary` text on `secondary` 10% background, radius 4
 
 ### Orbit Rings
@@ -205,18 +205,19 @@ Circular button at `button.sm` (94), centered in the orbit area.
 
 **Layers (inner to outer):**
 
-1. Shield icon — 45% of button diameter, `onButton` color
+1. State icon — 45% of button diameter, `onButton` color, filled
 2. Solid circle — `mutedColor` fill, pulses when connecting
 3. Ripple ring — state color stroke, appears on tap only
 4. Halo — state color, continuous pulse animation
 
-| State         | Color         | Icon             | Tap Action         |
-| ------------- | ------------- | ---------------- | ------------------ |
-| No permission | `mutedYellow` | `shield-warning` | Request permission |
-| Unpaired      | `mutedGray`   | `shield-keyhole` | —                  |
-| Connecting    | `mutedOrange` | `shield-up`      | —                  |
-| Connected     | `mutedGreen`  | `shield-check`   | Disconnect         |
-| Disconnected  | `mutedRed`    | `shield-cross`   | Reconnect          |
+| State                | Color         | Icon           | Notes              |
+| -------------------- | ------------- | -------------- | ------------------ |
+| Restricted           | `mutedYellow` | `fingerAccess` | Request permission |
+| Unpaired             | `mutedGray`   | `zap`          |                    |
+| Connecting           | `mutedOrange` | `loading`      | Spins continuously |
+| Connected            | `mutedGreen`  | `zap`          |                    |
+| Disconnected (ready) | `mutedRed`    | `play`         | Never connected    |
+| Disconnected (lost)  | `mutedRed`    | `unlink`       | Was connected      |
 
 ### Circular QR Code
 
@@ -226,17 +227,15 @@ Circular button at `button.sm` (94), centered in the orbit area.
 
 Pinned to the bottom of the main view. Capsule shape, single line, truncated with ellipsis.
 
-| State                       | Text                               |
-| --------------------------- | ---------------------------------- |
-| No permission               | `Tap to grant {permission} access` |
-| Unpaired                    | `No device paired yet`             |
-| Connecting                  | `Looking for your device`          |
-| Connected (has activity)    | `{last entry} · {time}`            |
-| Connected (no activity)     | `Connected and ready`              |
-| Disconnected (has activity) | `{last entry} · {time}`            |
-| Disconnected (no activity)  | `Tap to reconnect`                 |
+| State        | Text                                                                               |
+| ------------ | ---------------------------------------------------------------------------------- |
+| Restricted   | Android: "{Permission} access is required" / macOS: "Bluetooth access is required" |
+| Unpaired     | "No device paired"                                                                 |
+| Connecting   | "Searching via WiFi" or "Searching via BLE" (fallback: "Searching for device")     |
+| Connected    | "Connected via WiFi" or "Connected via BLE" (fallback: "Connected")                |
+| Disconnected | "Connection lost" (if was connected) or "Ready to connect" (if never connected)    |
 
-Text changes animate with a 3D flip. Tap opens the Activity Log when connected.
+Text changes animate with a 3D flip on X-axis. Tapping always opens the Activity Log.
 
 ### Activity Log
 
@@ -262,7 +261,7 @@ Empty state: "No activity yet" centered in `secondary` color.
 - Portrait only, bottom sheet (320 height)
 - Splash screen with mesh gradient + Z-draw logo animation
 - Foreground service notification when connected
-- QR: full-screen camera activity
+- QR: inline camera scanning with tap-to-focus
 - Permissions: Camera, Bluetooth, Location, Notifications
 
 ### macOS (Computer)
@@ -354,14 +353,21 @@ Adaptive icon XML descriptors generated for Android API 26+:
 
 ## Icons
 
-24x24, stroke style, `currentColor`. SVG path data embedded in source code. Parser must support arc commands (A/a).
+24x24 viewbox. SVG path data embedded in source code. Parser must support arc commands (A/a).
 
-| Icon             | Description        | Stroke Attributes                                    |
-| ---------------- | ------------------ | ---------------------------------------------------- |
-| `qr-code`        | QR code            | Mixed stroke and fill                                |
-| `undo-left`      | Back arrow         | Round cap, round join                                |
-| `shield-check`   | Shield + checkmark | Shield: default. Inner: round cap, round join        |
-| `shield-cross`   | Shield + cross     | Shield: default. Inner: round cap                    |
-| `shield-keyhole` | Shield + keyhole   | Shield: default. Inner: round join (uses arcs)       |
-| `shield-up`      | Shield + chevrons  | Shield: default. Inner: round cap, round join        |
-| `shield-warning` | Shield + warning   | Shield: default. Line: round cap. Dot: filled circle |
+### Header Icons
+
+| Icon       | Style | Description           |
+| ---------- | ----- | --------------------- |
+| `settings` | Fill  | Gear (hexagonal)      |
+| `zap`      | Fill  | Lightning bolt (back) |
+
+### Power Button Icons
+
+| Icon           | Style | Description                    |
+| -------------- | ----- | ------------------------------ |
+| `fingerAccess` | Fill  | Fingerprint / access           |
+| `zap`          | Fill  | Lightning bolt                 |
+| `loading`      | Fill  | Circular spinner (rotates)     |
+| `unlink`       | Fill  | Broken link / disconnect       |
+| `play`         | Fill  | Play triangle (drawn as paths) |

@@ -9,9 +9,8 @@ app/src/main/java/com/buzzel/
 ├── BuzzelApp.kt                 # Application class, connection state listeners
 ├── ui/
 │   ├── MainActivity.kt          # Main UI (power button, status, activity log)
-│   ├── ScanActivity.kt          # QR code scanner for pairing
 │   ├── AppHeaderView.kt         # Header with logo, title, trailing icon
-│   ├── PowerButtonView.kt       # Connection button with shield icons
+│   ├── PowerButtonView.kt       # Connection button with state icons
 │   ├── OrbitRingsView.kt        # Animated orbit rings around button
 │   ├── SVGIconView.kt           # SVG path icon renderer
 │   ├── WaveBLogoView.kt         # App logo (wave-b path)
@@ -30,8 +29,10 @@ app/src/main/java/com/buzzel/
 │   └── LogEntry.kt              # Log event types, direction, status
 ├── protocol/
 │   └── Protocol.kt              # Binary protocol, signals, TLV, QR
-└── config/
-    └── ConfigStore.kt           # SharedPreferences for pairing & settings
+├── config/
+│   └── ConfigStore.kt           # SharedPreferences for pairing & settings
+└── debug/
+    └── FileLogger.kt            # File-based debug logger
 
 app/src/test/java/com/buzzel/protocol/
 └── ProtocolTest.kt              # Protocol + FrameCodec tests

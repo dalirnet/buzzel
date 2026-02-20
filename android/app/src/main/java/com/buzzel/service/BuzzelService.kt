@@ -214,12 +214,15 @@ class BuzzelService : Service() {
                 app.isDeviceConnected = false
                 app.connectedDeviceName = null
             }
+
             ConnectionState.CONNECTING -> {
                 app.isDeviceConnected = false
             }
+
             ConnectionState.HANDSHAKING -> {
                 app.isDeviceConnected = false
             }
+
             ConnectionState.ACTIVE -> {
                 app.isDeviceConnected = true
                 app.hasBeenConnected = true

@@ -200,9 +200,9 @@ Total bytes on wire (frame header + signal byte + payload):
 
 Runs only in `active` state.
 
-- Both sides send `ping` every **30s**
+- Both sides send `ping` every **10s**
 - Reply with `pong` immediately
-- No `pong` within **10s** → `idle`
+- No `pong` within **5s** → `idle`
 
 ```
 Phone                          Computer

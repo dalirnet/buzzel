@@ -22,7 +22,8 @@ struct ActivityLogView: View {
       ScrollViewReader { proxy in
         ScrollView {
           LazyVStack(spacing: 0) {
-            ForEach(Array(transportManager.logEntries.enumerated()), id: \.element.id) { index, entry in
+            ForEach(Array(transportManager.logEntries.enumerated()), id: \.element.id) {
+              index, entry in
               if index > 0 {
                 Divider()
                   .padding(.leading, 38)

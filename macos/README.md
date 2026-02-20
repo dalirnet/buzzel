@@ -1,6 +1,6 @@
 # Buzzel — macOS
 
-Status bar app that connects to the Android Buzzel service over BLE or local WiFi.
+macOS app (Dock + status bar) that connects to the Android Buzzel service over BLE or local WiFi.
 
 ## Project Structure
 
@@ -23,10 +23,11 @@ Sources/
 │   ├── TransportManager.swift   # Unified BLE/TCP, state machine, ping/pong
 │   ├── QRGenerator.swift        # QR code generation for pairing
 │   ├── SVGPathParser.swift      # SVG path data parser (arcs, curves)
-│   └── AppStore.swift           # UserDefaults persistence
+│   ├── AppStore.swift           # UserDefaults persistence
+│   └── FileLogger.swift         # File-based debug logger
 └── Views/
     ├── MainView.swift           # Root view with state-driven content
-    ├── PowerButtonView.swift    # Connection button with shield icons
+    ├── PowerButtonView.swift    # Connection button with state icons
     ├── OrbitRingsView.swift     # Animated orbit rings around button
     ├── AnimatedSwitcher.swift   # Scale transition between views
     ├── CircularQRView.swift     # QR code display for pairing
@@ -35,7 +36,7 @@ Sources/
 Tests/
 └── ProtocolTests.swift          # Protocol + FrameCodec tests
 Resources/
-├── Info.plist                   # App config (LSUIElement=true, no dock icon)
+├── Info.plist                   # App config (LSUIElement=false, visible in Dock)
 └── Buzzel.entitlements          # Sandbox, network, bluetooth
 ```
 

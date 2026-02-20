@@ -8,7 +8,7 @@ Buzzel pairs your Android phone with your Mac over a direct local connection —
 
 - A lightweight macOS status bar app connects to a silent background service on your Android phone
 - Communication happens over **BLE or local WiFi** with automatic failover
-- Custom binary protocol — 256-byte frames, QR-based pairing, reliable delivery
+- Custom binary protocol — dynamic frame sizing, QR-based pairing, reliable delivery
 - Both apps stay completely out of your way after setup
 
 ## Setup

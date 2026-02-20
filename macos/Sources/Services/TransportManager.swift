@@ -609,7 +609,9 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   }
   func bleDidConnect() { DispatchQueue.main.async { self.transportDidConnect(.ble) } }
   func bleDidDisconnect() { DispatchQueue.main.async { self.transportDidDisconnect(.ble) } }
-  func bleDidReceiveData(_ data: Data) { DispatchQueue.main.async { self.transportDidReceiveData(data, via: .ble) } }
+  func bleDidReceiveData(_ data: Data) {
+    DispatchQueue.main.async { self.transportDidReceiveData(data, via: .ble) }
+  }
 
   // MARK: - TcpServerDelegate
 
@@ -623,5 +625,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   }
   func tcpServerDidAcceptClient() { DispatchQueue.main.async { self.transportDidConnect(.wifi) } }
   func tcpServerDidDisconnect() { DispatchQueue.main.async { self.transportDidDisconnect(.wifi) } }
-  func tcpServerDidReceiveData(_ data: Data) { DispatchQueue.main.async { self.transportDidReceiveData(data, via: .wifi) } }
+  func tcpServerDidReceiveData(_ data: Data) {
+    DispatchQueue.main.async { self.transportDidReceiveData(data, via: .wifi) }
+  }
 }
