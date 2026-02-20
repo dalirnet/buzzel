@@ -24,7 +24,7 @@ Resolved from platform system colors. macOS uses native color tokens directly. A
 | `secondary` | `textColorSecondary` / gray    | `.secondaryLabelColor`   | Secondary text, badges |
 | `surface`   | hardcoded per theme            | `.windowBackgroundColor` | Window background      |
 | `border`    | `text` at 12% opacity          | `.separatorColor`        | Dividers, drag handle  |
-| `accent`    | `colorAccent`                  | `.controlAccentColor`    | Orbit dots             |
+| `accent`    | `colorAccent`                  | `.controlAccentColor`    | QR icon, orbit dots    |
 | `green`     | system green                   | `.systemGreen`           | Success, orbit dots    |
 | `orange`    | system orange                  | `.systemOrange`          | Connecting, orbit dots |
 | `red`       | system red                     | `.systemRed`             | Error, disconnected    |
@@ -115,7 +115,6 @@ Base unit: **4**.
 | Typewriter     | 35ms/ch  |                           | Delete chars then type new chars                    |
 | Status flip    | 250ms    | easeInOut then spring     | 3D rotation on X-axis                               |
 | Orbit rotation | 12–25s   | linear                    | Continuous, synced to display refresh               |
-| Loading spin   | continuous | linear                  | Power button icon rotates when connecting            |
 | Menu bar blink | 1000ms   | toggle                    | macOS only                                          |
 
 ---
@@ -170,20 +169,20 @@ No delay before animation starts. No undraw phase. Transition: splash slides dow
 
 Three view states, navigated in-window (no separate windows):
 
-| View         | Title          | Trailing Icon | Trailing Action |
-| ------------ | -------------- | ------------- | --------------- |
-| Main         | "Buzzel"       | `settings`    | Open settings   |
-| Quick Setup  | "Quick Setup"  | `zap`         | Back to Main    |
-| Activity Log | "Activity Log" | `zap`         | Back to Main    |
+| View         | Title          | Badge       | Trailing Icon | Trailing Action |
+| ------------ | -------------- | ----------- | ------------- | --------------- |
+| Main         | "Buzzel"       | Device name | `qr-code`     | Open QR         |
+| QR Code      | "QR Code"      | —           | `undo-left`   | Back to Main    |
+| Activity Log | "Activity Log" | Entry count | `undo-left`   | Back to Main    |
 
 ### Header
 
 Persistent across views, content updates in place.
 
-- **Left**: App logo (`icon.sm`) + title with typewriter animation
+- **Left**: App logo (`icon.sm`) + title with typewriter animation + contextual badge
 - **Right**: Trailing icon button (`icon.md`)
-- Main view: `settings` icon (hexagonal gear, filled)
-- Sub-views (QR / Activity Log): `zap` icon (lightning bolt, filled) — navigates back to main
+- QR icon at 30% opacity and disabled when connected or missing permissions
+- Badge: `secondary` text on `secondary` 10% background, radius 4
 
 ### Orbit Rings
 
@@ -191,7 +190,6 @@ Three concentric rings with orbiting dots around the center content area.
 
 - Container: 294 x 294
 - Ring stroke: 1pt, `secondary` at 8% opacity
-- Device name planet: shown on outer ring when connected
 
 | Ring   | Radius | Duration | Direction         | Dots                       |
 | ------ | ------ | -------- | ----------------- | -------------------------- |
@@ -207,21 +205,18 @@ Circular button at `button.sm` (94), centered in the orbit area.
 
 **Layers (inner to outer):**
 
-1. State icon — 45% of button diameter, `onButton` color, filled
+1. Shield icon — 45% of button diameter, `onButton` color
 2. Solid circle — `mutedColor` fill, pulses when connecting
 3. Ripple ring — state color stroke, appears on tap only
 4. Halo — state color, continuous pulse animation
 
-| State         | Color         | Icon            | Tap Action         |
-| ------------- | ------------- | --------------- | ------------------ |
-| No permission | `mutedYellow` | `finger-access` | Request permission |
-| Unpaired      | `mutedGray`   | `zap`           | Enter scan mode    |
-| Connecting    | `mutedOrange` | `loading` (spin)| Cancel             |
-| Connected     | `mutedGreen`  | `zap`           | Disconnect         |
-| Disconnected  | `mutedRed`    | `unlink`        | Reconnect          |
-| Disconnected (ready) | `mutedRed` | `play`       | Connect            |
-
-"Ready" state: first connection attempt after pairing (never connected before). Shows `play` icon instead of `unlink`.
+| State         | Color         | Icon             | Tap Action         |
+| ------------- | ------------- | ---------------- | ------------------ |
+| No permission | `mutedYellow` | `shield-warning` | Request permission |
+| Unpaired      | `mutedGray`   | `shield-keyhole` | —                  |
+| Connecting    | `mutedOrange` | `shield-up`      | —                  |
+| Connected     | `mutedGreen`  | `shield-check`   | Disconnect         |
+| Disconnected  | `mutedRed`    | `shield-cross`   | Reconnect          |
 
 ### Circular QR Code
 
@@ -229,52 +224,34 @@ Circular button at `button.sm` (94), centered in the orbit area.
 
 ### Status Line
 
-Pinned to the bottom of the main view. Capsule shape, single line, truncated with ellipsis. Tap opens the Activity Log.
+Pinned to the bottom of the main view. Capsule shape, single line, truncated with ellipsis.
 
-**Android status text:**
+| State                       | Text                               |
+| --------------------------- | ---------------------------------- |
+| No permission               | `Tap to grant {permission} access` |
+| Unpaired                    | `No device paired yet`             |
+| Connecting                  | `Looking for your device`          |
+| Connected (has activity)    | `{last entry} · {time}`            |
+| Connected (no activity)     | `Connected and ready`              |
+| Disconnected (has activity) | `{last entry} · {time}`            |
+| Disconnected (no activity)  | `Tap to reconnect`                 |
 
-| State         | Text                                |
-| ------------- | ----------------------------------- |
-| Scanning      | `Point camera at QR code`           |
-| No permission | `{Permission} access is required`   |
-| Unpaired      | `No device paired`                  |
-| Connecting    | `Searching for device` / `Searching via {transport}` |
-| Connected     | `Connected` / `Connected via {transport}` |
-| Disconnected  | `Connection lost` / `Ready to connect` |
-
-**macOS status text:**
-
-| State                  | Text                              |
-| ---------------------- | --------------------------------- |
-| QR (pairing error)     | `{error}`                         |
-| QR (waiting)           | `Waiting for device to connect`   |
-| QR (idle)              | `Scan QR code with Android`       |
-| No permission          | `Bluetooth access is required`    |
-| Unpaired               | `No device paired`                |
-| Connecting             | `Searching for device` / `Searching via {transport}` |
-| Connected              | `Connected` / `Connected via {transport}` |
-| Disconnected           | `Connection lost` / `Ready to connect` |
-
-Transport name (e.g. "WiFi", "BLE") is shown when available. "Ready to connect" shown on first connection; "Connection lost" shown after a prior connection.
-
-Text changes animate with a 3D flip (rotate out on X-axis, swap text, spring back in).
+Text changes animate with a 3D flip. Tap opens the Activity Log when connected.
 
 ### Activity Log
 
-Scrollable list, newest entries at bottom, auto-scrolls when at bottom.
+Scrollable list, newest entries first. Maximum 100 entries retained.
 
 Each row:
 
-- Direction icon: 14pt, colored by status (`green` success, `red` failure)
-  - Incoming: arrow down (stroke)
-  - Outgoing: arrow up (stroke)
-  - Local: dot (filled)
+- Status dot: 8pt circle, `green` for success, `red` for failure
 - Message: `logEntry` size, `text` color, 2 lines max
 - Error detail (optional): `logTime` size, `red` color, 1 line max
 - Timestamp: `logTime` size, `secondary` color, right-aligned
-- Divider between rows, indented 38pt past the icon
+- Direction (optional): `logDir` size, `secondary` color — "IN" or "OUT"
+- Divider between rows, indented 28pt past the dot
 
-Empty state: Buzzel logo (30% opacity) + "No activity yet" + "Events will appear here" centered in `secondary` color.
+Empty state: "No activity yet" centered in `secondary` color.
 
 ---
 
@@ -282,45 +259,18 @@ Empty state: Buzzel logo (30% opacity) + "No activity yet" + "Events will appear
 
 ### Android (Phone)
 
-- Portrait only, full-screen activity
+- Portrait only, bottom sheet (320 height)
 - Splash screen with mesh gradient + Z-draw logo animation
 - Foreground service notification when connected
-- QR: inline camera preview in orbit area (circular clip, tap-to-focus)
+- QR: full-screen camera activity
 - Permissions: Camera, Bluetooth, Location, Notifications
-- Settings: AlertDialog with transport picker + unpair option
-- Transport preference default: "auto"
-- Auto-detect transport: resolves at connection time based on available transports
-
-#### Notification
-
-Foreground service notification shown while service is running.
-
-| Property | Value |
-| -------- | ----- |
-| Channel  | "Buzzel" |
-| Title    | "Connected to {deviceName}" |
-| Text     | "Buzzel is active and ready to receive commands" |
-| Icon     | App logo silhouette (white on transparent) |
-| Behavior | Ongoing, silent, taps opens MainActivity |
-
-Notification icon (`ic_notification`) is a tighter crop of the app logo for better visibility at small sizes. Generated by `assets.sh` with `NOTIF_PADDING=120` (vs `PADDING=450` for adaptive icons).
-
-| Density  | Size |
-| -------- | ---- |
-| mdpi     | 24px |
-| hdpi     | 36px |
-| xhdpi    | 48px |
-| xxhdpi   | 72px |
-| xxxhdpi  | 96px |
 
 ### macOS (Computer)
 
 - Fixed window: 360 x 640 (9:16), hides on close (stays in Dock + status bar)
 - Splash screen with mesh gradient + Z-draw logo animation, same timing as Android
-- QR: inline via AnimatedSwitcher, replacing the power button in orbit area
+- QR: inline via AnimatedSwitcher, replacing the power button
 - Permissions: Bluetooth only
-- Settings: popover from header icon with transport picker + unpair option
-- Transport preference default: "auto"
 - App icon in Dock (`LSUIElement` false)
 - Status bar icon: Z logo as template image
 
@@ -331,19 +281,6 @@ Notification icon (`ic_notification`) is a tighter crop of the app logo for bett
 | Connected        | Active                     |
 
 Right-click menu: connection status, Open App, Quit.
-
----
-
-## Logging
-
-Both platforms write to both system log and a rotating file log.
-
-| Platform | File location | Max size | Backups |
-| -------- | ------------- | -------- | ------- |
-| Android  | `<external-files-dir>/buzzel.log` | 5 MB | 1 (`buzzel.log.1`) |
-| macOS    | `~/Library/Containers/net.dalir.buzzel/Data/Library/Logs/Buzzel/buzzel.log` | 5 MB | 1 (`buzzel.log.1`) |
-
-Log format: `YYYY-MM-DD HH:mm:ss.SSS LEVEL/Category: message`
 
 ---
 
@@ -365,7 +302,7 @@ Path data loaded at runtime from `brand.json` (`Brand.json` on macOS) via the `B
 
 ### Brand Config
 
-Generated by each platform's `assets.sh`. Logo data extracted from `logo.svg`. Not manually maintained.
+Generated by each platform's `prepare.sh`. Logo data extracted from `logo.svg`. Not manually maintained.
 
 | Platform | Generated file                   |
 | -------- | -------------------------------- |
@@ -379,17 +316,12 @@ Generated by each platform's `assets.sh`. Logo data extracted from `logo.svg`. N
 
 ### Asset Generation
 
-Run via: `cd <platform> && sh scripts/assets.sh`.
+Run via Makefile: `cd <platform> && make assets`. No arguments needed.
 
 Android requires: `rsvg-convert`, `magick`.
 macOS requires: `rsvg-convert`, `magick`, `iconutil`.
 
-App icon foreground: white logo on mesh gradient background.
-
-| Constant        | Android | macOS | Purpose                                     |
-| --------------- | ------- | ----- | ------------------------------------------- |
-| `PADDING`       | 450     | 225   | ViewBox padding for adaptive/app icon logo  |
-| `NOTIF_PADDING` | 120     | —     | ViewBox padding for notification icon logo  |
+App icon foreground: white logo on mesh gradient background. Padding: 180 (Android), 225 (macOS).
 
 Adaptive icon XML descriptors generated for Android API 26+:
 
@@ -406,7 +338,6 @@ Adaptive icon XML descriptors generated for Android API 26+:
 | `res/mipmap-*/ic_launcher.png`                | Both (composited) |
 | `res/mipmap-*/ic_launcher_background.png`     | `mesh.svg`        |
 | `res/mipmap-*/ic_launcher_foreground.png`     | `logo.svg`        |
-| `res/drawable-*/ic_notification.png`          | `logo.svg`        |
 | `res/mipmap-anydpi-v26/ic_launcher.xml`       | Generated         |
 | `res/mipmap-anydpi-v26/ic_launcher_round.xml` | Generated         |
 
@@ -423,31 +354,14 @@ Adaptive icon XML descriptors generated for Android API 26+:
 
 ## Icons
 
-All icons use a 24x24 viewbox. SVG path data embedded in source code as filled paths. Parser must support arc commands (A/a).
+24x24, stroke style, `currentColor`. SVG path data embedded in source code. Parser must support arc commands (A/a).
 
-### Header Icons
-
-| Icon       | Style  | Usage                              |
-| ---------- | ------ | ---------------------------------- |
-| `settings` | Filled | Main view trailing icon (hexagonal gear with center circle) |
-| `zap`      | Filled | Sub-view trailing icon (back to main connection view)       |
-
-### Power Button Icons
-
-| Icon            | Style  | State                     |
-| --------------- | ------ | ------------------------- |
-| `finger-access` | Filled | No permission (fingerprint circles) |
-| `zap`           | Filled | Unpaired, connected (lightning bolt) |
-| `loading`       | Filled | Connecting (circle with gap, spins) |
-| `unlink`        | Filled | Disconnected (broken chain links)   |
-| `play`          | Stroke | Disconnected + ready (play triangle) |
-
-The `zap` path is defined once in `PowerButtonView` and shared with the header icon via reference.
-
-### Activity Log Icons
-
-| Icon         | Style  | Direction |
-| ------------ | ------ | --------- |
-| `arrow-down` | Stroke | Incoming  |
-| `arrow-up`   | Stroke | Outgoing  |
-| `dot`        | Filled | Local     |
+| Icon             | Description        | Stroke Attributes                                    |
+| ---------------- | ------------------ | ---------------------------------------------------- |
+| `qr-code`        | QR code            | Mixed stroke and fill                                |
+| `undo-left`      | Back arrow         | Round cap, round join                                |
+| `shield-check`   | Shield + checkmark | Shield: default. Inner: round cap, round join        |
+| `shield-cross`   | Shield + cross     | Shield: default. Inner: round cap                    |
+| `shield-keyhole` | Shield + keyhole   | Shield: default. Inner: round join (uses arcs)       |
+| `shield-up`      | Shield + chevrons  | Shield: default. Inner: round cap, round join        |
+| `shield-warning` | Shield + warning   | Shield: default. Line: round cap. Dot: filled circle |
