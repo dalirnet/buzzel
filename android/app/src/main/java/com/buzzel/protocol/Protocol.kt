@@ -1,6 +1,6 @@
 package com.buzzel.protocol
 
-import android.util.Log
+import com.buzzel.debug.FileLogger
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.security.MessageDigest
@@ -60,13 +60,13 @@ object Protocol {
 
     fun parseQr(raw: ByteArray): QrPayload? {
         if (raw.size != QR_SIZE) {
-            Log.w(TAG, "QR: invalid size ${raw.size}")
+            FileLogger.w(TAG, "QR: invalid size ${raw.size}")
             return null
         }
         val buf = ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN)
         val magic = buf.short.toInt() and 0xFFFF
         if (magic != QR_MAGIC) {
-            Log.w(TAG, "QR: invalid magic 0x${magic.toString(16)}")
+            FileLogger.w(TAG, "QR: invalid magic 0x${magic.toString(16)}")
             return null
         }
         val seed = ByteArray(16)

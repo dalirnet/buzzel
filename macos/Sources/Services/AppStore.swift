@@ -1,8 +1,7 @@
 import Combine
 import Foundation
-import os.log
 
-private let log = OSLog(subsystem: "com.buzzel", category: "AppStore")
+private let cat = "AppStore"
 
 class AppStore: ObservableObject {
 
@@ -24,11 +23,11 @@ class AppStore: ObservableObject {
     }
     transportMethod = defaults.string(forKey: "transportMethod") ?? "wifi"
     launchAtLogin = defaults.bool(forKey: "launchAtLogin")
-    os_log("Config loaded: transport=%{public}@", log: log, type: .debug, transportMethod)
+    FileLogger.debug("Config loaded: transport=\(transportMethod)", category: cat)
   }
 
   func save() {
-    os_log("Config saved", log: log, type: .debug)
+    FileLogger.debug("Config saved", category: cat)
     if let device = pairedDevice, let data = try? JSONEncoder().encode(device) {
       defaults.set(data, forKey: "pairedDevice")
     } else {

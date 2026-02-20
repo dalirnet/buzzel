@@ -1,6 +1,6 @@
 package com.buzzel.transport
 
-import android.util.Log
+import com.buzzel.debug.FileLogger
 import com.buzzel.protocol.Protocol
 import java.io.IOException
 import java.io.InputStream
@@ -30,14 +30,14 @@ class TcpClient(
         host: String,
         port: Int,
     ) {
-        Log.i(TAG, "Connecting to $host:$port")
+        FileLogger.i(TAG, "Connecting to $host:$port")
         stop()
         running = true
         Thread({ connectLoop(host, port) }, "TcpClient-Connect").start()
     }
 
     fun stop() {
-        Log.i(TAG, "Disconnecting")
+        FileLogger.i(TAG, "Disconnecting")
         running = false
         try {
             socket?.close()
@@ -50,12 +50,12 @@ class TcpClient(
     fun sendData(data: ByteArray): Boolean {
         val out = outputStream ?: return false
         return try {
-            Log.d(TAG, "Sending ${data.size} bytes")
+            FileLogger.d(TAG, "Sending ${data.size} bytes")
             out.write(FrameCodec.encode(data))
             out.flush()
             true
         } catch (e: IOException) {
-            Log.w(TAG, "Send failed", e)
+            FileLogger.w(TAG, "Send failed", e)
             false
         }
     }
@@ -67,13 +67,13 @@ class TcpClient(
         try {
             val sock = Socket()
             sock.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
-            Log.i(TAG, "Connected to $host:$port")
+            FileLogger.i(TAG, "Connected to $host:$port")
             socket = sock
             outputStream = sock.getOutputStream()
             onConnectionChanged(true)
             readLoop(sock)
         } catch (e: IOException) {
-            if (running) Log.w(TAG, "Connect failed: ${e.message}")
+            if (running) FileLogger.w(TAG, "Connect failed: ${e.message}")
         } finally {
             onConnectionChanged(false)
         }
@@ -86,15 +86,15 @@ class TcpClient(
                 val header = readExact(input, FrameCodec.HEADER_SIZE) ?: break
                 val length = FrameCodec.decodeLength(header)
                 if (length <= 0 || length > WIFI_MAX_PAYLOAD) {
-                    Log.w(TAG, "Invalid frame size: $length")
+                    FileLogger.w(TAG, "Invalid frame size: $length")
                     break
                 }
                 val body = readExact(input, length) ?: break
-                Log.d(TAG, "Frame received: $length bytes")
+                FileLogger.d(TAG, "Frame received: $length bytes")
                 onMessageReceived(body)
             }
         } catch (e: IOException) {
-            if (running) Log.w(TAG, "Read error", e)
+            if (running) FileLogger.w(TAG, "Read error", e)
         }
     }
 

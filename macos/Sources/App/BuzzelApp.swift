@@ -10,6 +10,7 @@ struct BuzzelApp: App {
 
   init() {
     Brand.load()
+    FileLogger.info("=== App started — log: \(FileLogger.logPath()) ===", category: "BuzzelApp")
   }
 
   var body: some Scene {
