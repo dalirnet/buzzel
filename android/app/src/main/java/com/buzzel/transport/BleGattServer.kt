@@ -46,6 +46,7 @@ class BleGattServer(
     private var preparedWriteBuffer = ByteArray(0)
     private val recvLock = Any()
     private val notificationSentSignal = LinkedBlockingQueue<Int>(1)
+    private var subscribedToNotifications = false
 
     private val gattCallback =
         object : BluetoothGattServerCallback() {
@@ -57,12 +58,13 @@ class BleGattServer(
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
                     FileLogger.d(TAG, "Device connected: ${device.address}")
                     connectedDevice = device
-                    onConnectionChanged(true)
+                    subscribedToNotifications = false
                     stopAdvertising()
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     FileLogger.d(TAG, "Device disconnected: ${device.address}")
                     if (connectedDevice?.address == device.address) {
                         connectedDevice = null
+                        subscribedToNotifications = false
                         negotiatedMtu = DEFAULT_MTU
                         recvBuffer = ByteArray(0)
                         preparedWriteBuffer = ByteArray(0)
@@ -119,8 +121,17 @@ class BleGattServer(
                 value: ByteArray,
             ) {
                 if (descriptor.uuid == BleUuids.CCCD) {
+                    descriptor.value = value
+                    FileLogger.d(TAG, "CCCD written: ${value.map { it.toInt() and 0xFF }}")
                     if (responseNeeded) {
                         gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
+                    }
+                    // Notifications enabled — central is now subscribed and ready to receive
+                    val enabled = value.size >= 2 && value[0].toInt() == 1
+                    if (enabled && !subscribedToNotifications) {
+                        subscribedToNotifications = true
+                        FileLogger.i(TAG, "Central subscribed to notifications — reporting connected")
+                        onConnectionChanged(true)
                     }
                 }
             }
@@ -202,6 +213,7 @@ class BleGattServer(
             FileLogger.e(TAG, "BLE disconnect failed", e)
         }
         connectedDevice = null
+        subscribedToNotifications = false
         negotiatedMtu = DEFAULT_MTU
         synchronized(recvLock) {
             recvBuffer = ByteArray(0)
