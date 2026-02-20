@@ -67,6 +67,7 @@ class TcpClient(
         try {
             val sock = Socket()
             sock.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+            sock.keepAlive = true
             FileLogger.i(TAG, "Connected to $host:$port")
             socket = sock
             outputStream = sock.getOutputStream()

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Buzzel</string>
-    <string name="notification_channel_name">Buzzel Service</string>
-    <string name="notification_title">Buzzel is running</string>
+    <string name="notification_channel_name">Buzzel</string>
+    <string name="notification_title">Connected to %s</string>
+    <string name="notification_text">Buzzel is active and ready to receive commands</string>
 </resources>

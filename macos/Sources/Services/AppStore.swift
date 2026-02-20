@@ -8,7 +8,7 @@ class AppStore: ObservableObject {
   static let shared = AppStore()
 
   @Published var pairedDevice: DeviceInfo?
-  @Published var transportMethod: String = "wifi"
+  @Published var transportMethod: String = "auto"
   @Published var launchAtLogin: Bool = false
 
   private let defaults = UserDefaults.standard
@@ -21,7 +21,7 @@ class AppStore: ObservableObject {
     {
       pairedDevice = device
     }
-    transportMethod = defaults.string(forKey: "transportMethod") ?? "wifi"
+    transportMethod = defaults.string(forKey: "transportMethod") ?? "auto"
     launchAtLogin = defaults.bool(forKey: "launchAtLogin")
     FileLogger.debug("Config loaded: transport=\(transportMethod)", category: cat)
   }

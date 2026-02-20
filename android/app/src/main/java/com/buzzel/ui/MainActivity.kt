@@ -60,56 +60,13 @@ class MainActivity : Activity() {
         private val ICON_ARROW_UP = arrayOf(arrayOf("M12 19V5M5 12l7-7 7 7"))
         private val ICON_DOT = arrayOf(arrayOf("M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0"))
 
-        private val ICON_BACK =
-            arrayOf(
-                arrayOf(
-                    "M4 7h11c1.87 0 2.804 0 3.5.402A3 3 0 0 1 19.598 8.5C20 9.196 20 10.13 20 12s0 2.804-.402 3.5a3 3 0 0 1-1.098 1.098C17.804 17 16.87 17 15 17H8M4 7l3-3M4 7l3 3",
-                ),
-            )
+        private val ICON_ZAP = arrayOf(arrayOf(PowerButtonView.ZAP_PATH))
 
-        private val ICON_QR =
+        private val ICON_SETTINGS =
             arrayOf(
                 arrayOf(
-                    "M2 16.9c0-1.31 0-1.964.295-2.445a2 2 0 0 1 .66-.66c.48-.295 1.136-.295 2.445-.295h1.1c1.886 0 2.828 0 3.414.586s.586 1.528.586 3.414v1.1c0 1.31 0 1.964-.295 2.445a2 2 0 0 1-.66.66C9.065 22 8.409 22 7.1 22c-1.964 0-2.946 0-3.667-.442a3 3 0 0 1-.99-.99C2 19.845 2 18.864 2 16.9Z",
+                    "M10.026,2.25 L13.974,2.25 C14.744,2.25 15.376,2.25 15.896,2.301 C16.441,2.355 16.921,2.468 17.376,2.73 C17.831,2.991 18.17,3.349 18.49,3.793 C18.795,4.217 19.111,4.763 19.497,5.428 L21.458,8.808 C21.845,9.475 22.163,10.024 22.38,10.5 C22.608,11 22.75,11.474 22.75,12 C22.75,12.526 22.608,13 22.38,13.5 C22.163,13.976 21.845,14.525 21.458,15.192 L21.458,15.192 L19.497,18.572 L19.497,18.572 C19.111,19.237 18.795,19.783 18.49,20.207 C18.17,20.651 17.831,21.009 17.376,21.27 C16.921,21.532 16.441,21.645 15.896,21.699 C15.376,21.75 14.744,21.75 13.974,21.75 L10.026,21.75 C9.256,21.75 8.624,21.75 8.104,21.699 C7.559,21.645 7.079,21.532 6.624,21.27 C6.169,21.009 5.83,20.651 5.51,20.207 C5.205,19.783 4.889,19.237 4.503,18.572 L2.542,15.192 C2.155,14.525 1.837,13.977 1.62,13.5 C1.392,13 1.25,12.526 1.25,12 C1.25,11.474 1.392,11 1.62,10.5 C1.837,10.024 2.155,9.475 2.542,8.808 L4.503,5.428 C4.889,4.763 5.205,4.217 5.51,3.793 C5.83,3.349 6.169,2.991 6.624,2.73 C7.079,2.468 7.559,2.355 8.104,2.301 C8.624,2.25 9.256,2.25 10.026,2.25 L10.026,2.25 Z M7.372,4.03 C7.166,4.148 6.975,4.326 6.728,4.67 C6.471,5.026 6.191,5.508 5.782,6.213 L3.858,9.528 C3.448,10.236 3.168,10.72 2.985,11.122 C2.809,11.508 2.75,11.763 2.75,12 C2.75,12.237 2.809,12.492 2.985,12.878 C3.168,13.28 3.448,13.764 3.858,14.472 L5.782,17.787 C6.191,18.492 6.471,18.974 6.728,19.33 C6.975,19.674 7.166,19.852 7.372,19.97 C7.578,20.088 7.828,20.165 8.25,20.206 C8.688,20.249 9.247,20.25 10.063,20.25 L13.937,20.25 C14.753,20.25 15.311,20.249 15.75,20.206 C16.172,20.165 16.422,20.088 16.628,19.97 C16.834,19.852 17.025,19.674 17.272,19.33 C17.529,18.974 17.809,18.492 18.218,17.787 L20.142,14.472 C20.552,13.764 20.832,13.28 21.015,12.878 C21.191,12.492 21.25,12.237 21.25,12 C21.25,11.763 21.191,11.508 21.015,11.122 C20.832,10.72 20.552,10.236 20.142,9.528 L18.218,6.213 C17.809,5.508 17.529,5.026 17.272,4.67 C17.025,4.326 16.834,4.148 16.628,4.03 C16.422,3.912 16.172,3.835 15.75,3.794 C15.311,3.751 14.753,3.75 13.937,3.75 L10.063,3.75 C9.247,3.75 8.688,3.751 8.25,3.794 C7.828,3.835 7.578,3.912 7.372,4.03 Z M12,7.75 C14.347,7.75 16.25,9.653 16.25,12 C16.25,14.347 14.347,16.25 12,16.25 C9.653,16.25 7.75,14.347 7.75,12 C7.75,9.653 9.653,7.75 12,7.75 Z M9.25,12 C9.25,13.519 10.481,14.75 12,14.75 C13.519,14.75 14.75,13.519 14.75,12 C14.75,10.481 13.519,9.25 12,9.25 C10.481,9.25 9.25,10.481 9.25,12 Z",
                 ),
-                arrayOf(
-                    "M13.5 5.4c0-1.31 0-1.964.295-2.445a2 2 0 0 1 .66-.66C14.935 2 15.591 2 16.9 2c1.964 0 2.946 0 3.668.442a3 3 0 0 1 .99.99C22 4.155 22 5.137 22 7.1c0 1.31 0 1.964-.295 2.445a2 2 0 0 1-.66.66c-.48.295-1.136.295-2.445.295h-1.1c-1.886 0-2.828 0-3.414-.586S13.5 8.386 13.5 6.5z",
-                ),
-                arrayOf(
-                    "M2 7.1c0-1.964 0-2.946.442-3.667a3 3 0 0 1 .99-.99C4.155 2 5.137 2 7.1 2c1.31 0 1.964 0 2.445.295a2 2 0 0 1 .66.66c.295.48.295 1.136.295 2.445v1.1c0 1.886 0 2.828-.586 3.414S8.386 10.5 6.5 10.5H5.4c-1.31 0-1.964 0-2.445-.295a2 2 0 0 1-.66-.66C2 9.065 2 8.409 2 7.1Z",
-                ),
-                arrayOf(
-                    "M16.5 6.25c0-.515 0-.773.13-.955a.7.7 0 0 1 .165-.166C16.977 5 17.235 5 17.75 5s.773 0 .955.13a.7.7 0 0 1 .166.165c.129.182.129.44.129.955s0 .773-.13.955a.7.7 0 0 1-.165.166c-.182.129-.44.129-.955.129s-.773 0-.955-.13a.7.7 0 0 1-.166-.165c-.129-.182-.129-.44-.129-.955",
-                ),
-                arrayOf(
-                    "M5 6.25c0-.515 0-.773.13-.955a.7.7 0 0 1 .165-.166C5.477 5 5.735 5 6.25 5s.773 0 .955.13a.7.7 0 0 1 .166.165c.129.182.129.44.129.955s0 .773-.13.955a.7.7 0 0 1-.165.166c-.182.129-.44.129-.955.129s-.773 0-.955-.13a.7.7 0 0 1-.166-.165C5 7.023 5 6.765 5 6.25",
-                ),
-                arrayOf(
-                    "M5 17.75c0-.515 0-.773.13-.955a.7.7 0 0 1 .165-.166c.182-.129.44-.129.955-.129s.773 0 .955.13a.7.7 0 0 1 .166.165c.129.182.129.44.129.955s0 .773-.13.955a.7.7 0 0 1-.165.166C7.023 19 6.765 19 6.25 19s-.773 0-.955-.13a.7.7 0 0 1-.166-.165C5 18.523 5 18.265 5 17.75",
-                ),
-                arrayOf(
-                    "M16 17.75c0-.702 0-1.053.169-1.306a1 1 0 0 1 .275-.275C16.697 16 17.048 16 17.75 16s1.053 0 1.306.169a1 1 0 0 1 .275.275c.169.253.169.604.169 1.306s0 1.053-.169 1.306a1 1 0 0 1-.275.275c-.253.169-.604.169-1.306.169s-1.053 0-1.306-.169a1 1 0 0 1-.275-.275C16 18.803 16 18.452 16 17.75",
-                ),
-                arrayOf("M12.75 22a.75.75 0 0 0 1.5 0z"),
-                arrayOf("M14.389 13.837l.417.624z"),
-                arrayOf("M13.837 14.389l-.623-.417z"),
-                arrayOf(
-                    "M17 12.75c-.687 0-1.258 0-1.719.046c-.474.048-.913.153-1.309.418l.834 1.247c.108-.073.272-.137.627-.173c.367-.037.85-.038 1.567-.038z",
-                ),
-                arrayOf(
-                    "M14.25 17c0-.718 0-1.2.038-1.567c.036-.355.1-.519.173-.627l-1.248-.834c-.264.396-.369.835-.417 1.309c-.047.461-.046 1.032-.046 1.719z",
-                ),
-                arrayOf("M13.972 14.028c-.3.2-.558.458-.758.758l1.247.834a1.3 1.3 0 0 1 .345-.345z"),
-                arrayOf("M22.75 13.5a.75.75 0 0 0-1.5 0z"),
-                arrayOf("M21.052 21.848l.287.693z"),
-                arrayOf("M22.135 20.765l-.693-.287z"),
-                arrayOf(
-                    "M19 22.75c.456 0 .835 0 1.145-.02c.317-.022.617-.069.907-.19l-.574-1.385c-.077.032-.194.061-.435.078c-.247.017-.567.017-1.043.017z",
-                ),
-                arrayOf(
-                    "M21.25 19c0 .476 0 .796-.017 1.043c-.017.241-.046.358-.078.435l1.386.574c.12-.29.167-.59.188-.907c.021-.31.021-.69.021-1.145z",
-                ),
-                arrayOf("M21.052 21.54a2.75 2.75 0 0 0 1.489-1.488l-1.386-.574a1.25 1.25 0 0 1-.677.677z"),
             )
 
         private val REQUIRED_PERMISSIONS: Array<String>
@@ -163,6 +120,7 @@ class MainActivity : Activity() {
     }
 
     @Volatile private var scanning = false
+    @Volatile private var processingFrame = false
 
     private fun dp(value: Int) = dp(this as Context, value)
 
@@ -294,7 +252,6 @@ class MainActivity : Activity() {
         store.pairingCode = Protocol.derivePairingCode(qr.seed)
         store.pendingSessionId = Protocol.deriveSessionId(qr.seed)
         store.macHost = qr.host
-        store.preferTransport = qr.prefer
         app.hasBeenConnected = false
         startService()
         refreshState()
@@ -502,18 +459,16 @@ class MainActivity : Activity() {
         headerView.setTitle(title)
 
         // Trailing icon
-        val connected = state == PowerButtonState.CONNECTED
         if (showActivityLog || scanMode) {
-            headerView.setTrailingIcon(ICON_BACK, SVGIconView.IconMode.STROKE, AppColors.text)
+            headerView.setTrailingIcon(ICON_ZAP, SVGIconView.IconMode.FILL, AppColors.text)
             headerView.setTrailingIconEnabled(true)
         } else {
-            headerView.setTrailingIcon(ICON_QR, SVGIconView.IconMode.MIXED, AppColors.accent)
-            val disabled = connected || state == PowerButtonState.RESTRICTED
-            headerView.setTrailingIconEnabled(!disabled)
+            headerView.setTrailingIcon(ICON_SETTINGS, SVGIconView.IconMode.FILL, AppColors.text)
+            headerView.setTrailingIconEnabled(true)
         }
 
         // Device planet on orbit rings
-        orbitRings.deviceName = if (connected) app.connectedDeviceName else null
+        orbitRings.deviceName = if (state == PowerButtonState.CONNECTED) app.connectedDeviceName else null
 
         refreshStatusLine()
     }
@@ -618,8 +573,40 @@ class MainActivity : Activity() {
         when {
             showActivityLog -> showMainView()
             scanMode -> exitScanMode()
-            else -> enterScanMode()
+            else -> showSettingsDialog()
         }
+    }
+
+    private fun showSettingsDialog() {
+        val store = app.configStore
+        val current = store.preferTransport ?: "auto"
+        val options = arrayOf("Auto", "WiFi", "Bluetooth")
+        val values = arrayOf("auto", "wifi", "ble")
+        val selectedIndex = values.indexOf(current).coerceAtLeast(0)
+
+        val items = mutableListOf<Pair<String, () -> Unit>>()
+        for ((i, label) in options.withIndex()) {
+            val display = if (i == selectedIndex) "$label  \u2022" else label
+            items.add(display to {
+                store.preferTransport = values[i]
+            })
+        }
+        if (store.pairingCode != null) {
+            items.add("Unpair Device" to {
+                stopService(android.content.Intent(this, BuzzelService::class.java))
+                store.clearPairing()
+                app.hasBeenConnected = false
+                refreshState()
+            })
+        }
+
+        val builder = android.app.AlertDialog.Builder(this)
+        builder.setTitle("Settings")
+        builder.setItems(items.map { it.first }.toTypedArray()) { _, which ->
+            items[which].second()
+        }
+        builder.setNegativeButton("Close", null)
+        builder.show()
     }
 
     private fun showActivityLogView() {
@@ -753,7 +740,10 @@ class MainActivity : Activity() {
                     )
                 }
                 entries.addView(buildLogEntryRow(entry))
-                scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+                val isAtBottom = !scroll.canScrollVertically(1)
+                if (isAtBottom) {
+                    scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+                }
             }
         }
         app.addLogEntryListener(listener)
@@ -883,6 +873,7 @@ class MainActivity : Activity() {
     private fun enterScanMode() {
         scanMode = true
         scanning = true
+        processingFrame = false
         cameraFrame.visibility = View.VISIBLE
         refreshState()
         startCamera()
@@ -943,7 +934,7 @@ class MainActivity : Activity() {
                     ?.maxByOrNull { it.width * it.height }
                     ?: Size(1280, 720)
 
-            imageReader = ImageReader.newInstance(previewSize.width, previewSize.height, ImageFormat.YUV_420_888, 2)
+            imageReader = ImageReader.newInstance(previewSize.width, previewSize.height, ImageFormat.YUV_420_888, 3)
             imageReader!!.setOnImageAvailableListener({ reader ->
                 val image =
                     try {
@@ -952,20 +943,24 @@ class MainActivity : Activity() {
                         null
                     }
                         ?: return@setOnImageAvailableListener
-                if (!scanning) {
+                if (!scanning || processingFrame) {
                     image.close()
                     return@setOnImageAvailableListener
                 }
+                processingFrame = true
                 try {
                     val inputImage = InputImage.fromMediaImage(image, sensorOrientation)
                     scanner
                         .process(inputImage)
                         .addOnSuccessListener { handleBarcodes(it) }
-                        .addOnFailureListener { image.close() }
-                        .addOnCompleteListener { image.close() }
+                        .addOnCompleteListener {
+                            image.close()
+                            processingFrame = false
+                        }
                 } catch (e: Exception) {
                     FileLogger.e(TAG, "Error processing image", e)
                     image.close()
+                    processingFrame = false
                 }
             }, bgHandler)
 

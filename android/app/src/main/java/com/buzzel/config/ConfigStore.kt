@@ -50,7 +50,7 @@ class ConfigStore(
         }
 
     var preferTransport: String?
-        get() = prefs.getString(KEY_PREFER_TRANSPORT, "wifi")
+        get() = prefs.getString(KEY_PREFER_TRANSPORT, "auto")
         set(value) {
             FileLogger.d(TAG, "Set preferTransport=$value")
             prefs.edit().putString(KEY_PREFER_TRANSPORT, value).apply()

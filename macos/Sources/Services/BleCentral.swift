@@ -16,14 +16,12 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
 
   weak var delegate: BleCentralDelegate?
 
-  @Published var discoveredDevices: [DiscoveredDevice] = []
   @Published var bluetoothAuthorization: CBManagerAuthorization = CBCentralManager.authorization
   @Published var bluetoothPoweredOff = false
 
   private var centralManager: CBCentralManager?
   private var peripheral: CBPeripheral?
   private var dataCharacteristic: CBCharacteristic?
-  private var isDiscoveryMode = false
   private var isStopped = false
   private var reconnectWork: DispatchWorkItem?
 
@@ -61,56 +59,16 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     }
   }
 
-  func startDiscovery() {
-    isDiscoveryMode = true
-    discoveredDevices = []
-    centralManager?.stopScan()
-    if let p = peripheral {
-      centralManager?.cancelPeripheralConnection(p)
-      peripheral = nil
-      dataCharacteristic = nil
-    }
-    if centralManager == nil {
-      centralManager = CBCentralManager(delegate: self, queue: nil)
-    } else if centralManager?.state == .poweredOn {
-      centralManager?.scanForPeripherals(
-        withServices: [serviceUUID],
-        options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
-      )
-    }
-  }
-
-  func stopDiscovery() {
-    isDiscoveryMode = false
-    centralManager?.stopScan()
-  }
-
-  func connect(to device: DiscoveredDevice) {
-    stopDiscovery()
-    self.peripheral = device.peripheral
-    device.peripheral.delegate = self
-    centralManager?.connect(device.peripheral, options: nil)
-  }
-
   func stop() {
     FileLogger.debug("stop", category: cat)
     reconnectWork?.cancel()
     reconnectWork = nil
     isStopped = true
-    isDiscoveryMode = false
-    discoveredDevices = []
     centralManager?.stopScan()
     if let p = peripheral {
       centralManager?.cancelPeripheralConnection(p)
     }
     peripheral = nil
-  }
-
-  func disconnect() {
-    FileLogger.debug("BLE disconnect requested", category: cat)
-    if let p = peripheral {
-      centralManager?.cancelPeripheralConnection(p)
-    }
   }
 
   func requestAccess() {
@@ -148,14 +106,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
       self.bluetoothPoweredOff = central.state == .poweredOff
     }
     if central.state == .poweredOn {
-      if isDiscoveryMode {
-        central.scanForPeripherals(
-          withServices: [serviceUUID],
-          options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
-        )
-      } else {
-        central.scanForPeripherals(withServices: [serviceUUID], options: nil)
-      }
+      central.scanForPeripherals(withServices: [serviceUUID], options: nil)
     }
   }
 
@@ -163,32 +114,14 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     _ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
     advertisementData: [String: Any], rssi RSSI: NSNumber
   ) {
-    if isDiscoveryMode {
-      let name =
-        advertisementData[CBAdvertisementDataLocalNameKey] as? String
-        ?? peripheral.name
-        ?? "Unknown"
-      let rssi = RSSI.intValue
-
-      if let idx = discoveredDevices.firstIndex(where: { $0.id == peripheral.identifier }) {
-        discoveredDevices[idx].rssi = rssi
-        discoveredDevices[idx].name = name
-      } else {
-        discoveredDevices.append(
-          DiscoveredDevice(
-            id: peripheral.identifier, peripheral: peripheral, name: name, rssi: rssi)
-        )
-      }
-    } else {
-      FileLogger.debug(
-        "didDiscover: \(peripheral.identifier.uuidString) (\(peripheral.name ?? "unnamed"))",
-        category: cat)
-      self.peripheral = peripheral
-      peripheral.delegate = self
-      central.stopScan()
-      delegate?.bleDidStartConnecting()
-      central.connect(peripheral, options: nil)
-    }
+    FileLogger.debug(
+      "didDiscover: \(peripheral.identifier.uuidString) (\(peripheral.name ?? "unnamed"))",
+      category: cat)
+    self.peripheral = peripheral
+    peripheral.delegate = self
+    central.stopScan()
+    delegate?.bleDidStartConnecting()
+    central.connect(peripheral, options: nil)
   }
 
   func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -205,9 +138,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
       category: cat)
     resetConnectionState()
     if isStopped { return }
-    if !isDiscoveryMode {
-      scheduleReconnect()
-    }
+    scheduleReconnect()
   }
 
   func centralManager(
@@ -219,9 +150,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     resetConnectionState()
     if isStopped { return }
     delegate?.bleDidDisconnect()
-    if !isDiscoveryMode {
-      scheduleReconnect()
-    }
+    scheduleReconnect()
   }
 
   private func resetConnectionState() {

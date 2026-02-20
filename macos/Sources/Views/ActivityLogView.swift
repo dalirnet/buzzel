@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ActivityLogView: View {
   @ObservedObject var transportManager: TransportManager
+  @State private var isAtBottom = true
 
   var body: some View {
     if transportManager.logEntries.isEmpty {
@@ -28,12 +29,20 @@ struct ActivityLogView: View {
               }
               ActivityLogRow(entry: entry)
             }
+            Color.clear
+              .frame(height: 1)
+              .id("bottom")
+              .onAppear { isAtBottom = true }
+              .onDisappear { isAtBottom = false }
           }
           .padding(.vertical, 4)
         }
+        .onAppear {
+          proxy.scrollTo("bottom", anchor: .bottom)
+        }
         .onChange(of: transportManager.logEntries.count) { _ in
-          if let last = transportManager.logEntries.last {
-            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+          if isAtBottom {
+            withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
           }
         }
       }

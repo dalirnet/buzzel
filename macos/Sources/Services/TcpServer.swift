@@ -21,13 +21,18 @@ class TcpServer {
   private var pendingBodyLength = 0
 
   var isConnected: Bool { connection?.state == .ready }
-  var isListening: Bool { listener?.state == .ready }
 
   func start(port: UInt16) {
     FileLogger.info("TCP server starting on port \(port)", category: cat)
     stopInternal()
     guard let nwPort = NWEndpoint.Port(rawValue: port) else { return }
-    do { listener = try NWListener(using: .tcp, on: nwPort) } catch { return }
+    let tcpOpts = NWProtocolTCP.Options()
+    tcpOpts.enableKeepalive = true
+    tcpOpts.keepaliveIdle = 5
+    tcpOpts.keepaliveInterval = 5
+    tcpOpts.keepaliveCount = 2
+    let params = NWParameters(tls: nil, tcp: tcpOpts)
+    do { listener = try NWListener(using: params, on: nwPort) } catch { return }
 
     listener?.newConnectionHandler = { [weak self] newConn in
       self?.connection?.cancel()

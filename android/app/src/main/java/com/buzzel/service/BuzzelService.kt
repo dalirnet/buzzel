@@ -5,6 +5,8 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -28,8 +30,8 @@ class BuzzelService : Service() {
     companion object {
         private const val TAG = "BuzzelService"
         private const val NOTIFICATION_ID = 1
-        private const val PING_INTERVAL_MS = 30_000L
-        private const val PONG_TIMEOUT_MS = 10_000L
+        private const val PING_INTERVAL_MS = 10_000L
+        private const val PONG_TIMEOUT_MS = 5_000L
         private const val HANDSHAKE_TIMEOUT_MS = 30_000L
         private const val FAILOVER_DELAY_MS = 10_000L
     }
@@ -54,11 +56,7 @@ class BuzzelService : Service() {
     private var retryPayload: ByteArray? = null
     private var retryRunnable: Runnable? = null
 
-    private data class FailoverStep(
-        val transport: String,
-    )
-
-    private var failoverSteps: List<FailoverStep> = emptyList()
+    private var failoverSteps: List<String> = emptyList()
     private var failoverIndex = 0
     private var failoverGeneration = 0
     private var reconnectAttempts = 0
@@ -94,11 +92,23 @@ class BuzzelService : Service() {
 
     // region Failover
 
+    private fun resolvePreferredTransport(): String {
+        val pref = app.configStore.preferTransport ?: "auto"
+        if (pref == "wifi" || pref == "ble") return pref
+        // "auto": check WiFi connectivity
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val net = cm?.activeNetwork
+        val caps = net?.let { cm.getNetworkCapabilities(it) }
+        val hasWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        FileLogger.i(TAG, "Auto-detect: WiFi ${if (hasWifi) "available" else "unavailable"}")
+        return if (hasWifi) "wifi" else "ble"
+    }
+
     private fun buildFailoverSteps() {
-        val primary = app.configStore.preferTransport ?: "wifi"
+        val primary = resolvePreferredTransport()
         val secondary = if (primary == "wifi") "ble" else "wifi"
-        failoverSteps = listOf(FailoverStep(primary), FailoverStep(secondary))
-        FileLogger.d(TAG, "Failover steps: ${failoverSteps.map { it.transport }}")
+        failoverSteps = listOf(primary, secondary)
+        FileLogger.d(TAG, "Failover steps: $failoverSteps")
     }
 
     private fun startFailover() {
@@ -114,15 +124,15 @@ class BuzzelService : Service() {
             FileLogger.e(TAG, "Failover: no steps configured")
             return
         }
-        val step = failoverSteps[failoverIndex % failoverSteps.size]
+        val preferred = failoverSteps[failoverIndex % failoverSteps.size]
         failoverGeneration++
         val gen = failoverGeneration
-        FileLogger.i(TAG, "Failover step $failoverIndex: trying ${step.transport} (gen=$gen, timeout=${FAILOVER_DELAY_MS / 1000}s)")
+        FileLogger.i(TAG, "Failover step $failoverIndex: trying $preferred (gen=$gen, timeout=${FAILOVER_DELAY_MS / 1000}s)")
         transport.stopAll()
         transitionTo(ConnectionState.CONNECTING)
-        app.connectingTransport = if (step.transport == "wifi") "WiFi" else "BLE"
+        app.connectingTransport = if (preferred == "wifi") "WiFi" else "BLE"
 
-        when (step.transport) {
+        when (preferred) {
             "wifi" -> {
                 val host = app.configStore.macHost
                 if (!host.isNullOrEmpty()) {
@@ -145,7 +155,7 @@ class BuzzelService : Service() {
         val runnable =
             Runnable {
                 if (state == ConnectionState.CONNECTING) {
-                    FileLogger.i(TAG, "Failover timeout: ${step.transport} did not connect in ${FAILOVER_DELAY_MS / 1000}s, advancing")
+                    FileLogger.i(TAG, "Failover timeout: $preferred did not connect in ${FAILOVER_DELAY_MS / 1000}s, advancing")
                     advanceFailover()
                 }
             }
@@ -584,9 +594,9 @@ class BuzzelService : Service() {
         val pending = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat
             .Builder(this, BuzzelApp.CHANNEL_ID)
-            .setContentTitle(getString(R.string.notification_title))
-            .setContentText("Connected")
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle(getString(R.string.notification_title, deviceName))
+            .setContentText(getString(R.string.notification_text))
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pending)
             .setOngoing(true)
             .setSilent(true)

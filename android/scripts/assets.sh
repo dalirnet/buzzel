@@ -11,6 +11,7 @@
 #   app/src/main/assets/sofia-sans.ttf          — custom font
 #   app/src/main/res/drawable/mesh.png           — splash background
 #   app/src/main/res/mipmap-*/ic_launcher*.png  — app icons (legacy + adaptive)
+#   app/src/main/res/drawable-*/ic_notification.png — notification icon
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -18,6 +19,7 @@ cd "$(dirname "$0")/.."
 # --- Constants ---
 
 PADDING=450
+NOTIF_PADDING=120
 
 # --- Paths ---
 
@@ -114,6 +116,22 @@ for pair in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
     magick "$TMP/mesh.png" -resize "${s}x${s}!" "$TMP/bg.png"
     rsvg-convert -w "$s" -h "$s" "$TMP/logo.svg" -o "$TMP/fg.png"
     magick "$TMP/bg.png" "$TMP/fg.png" -composite "$RES/mipmap-$d/ic_launcher.png"
+done
+
+# --- 7. Notification icon ---
+
+NPVB=$((VB + NOTIF_PADDING * 2))
+sed \
+    -e "s/viewBox=\"[^\"]*\"/viewBox=\"-${NOTIF_PADDING} -${NOTIF_PADDING} ${NPVB} ${NPVB}\"/" \
+    -e "s/width=\"[^\"]*\"/width=\"${NPVB}\"/" \
+    -e "s/height=\"[^\"]*\"/height=\"${NPVB}\"/" \
+    -e "s/<path /<path fill=\"#FFFFFF\" /g" \
+    "$LOGO" > "$TMP/notif_logo.svg"
+
+mkdir -p "$RES/drawable-mdpi" "$RES/drawable-hdpi" "$RES/drawable-xhdpi" "$RES/drawable-xxhdpi" "$RES/drawable-xxxhdpi"
+for pair in mdpi:24 hdpi:36 xhdpi:48 xxhdpi:72 xxxhdpi:96; do
+    d="${pair%%:*}"; s="${pair##*:}"
+    rsvg-convert -w "$s" -h "$s" "$TMP/notif_logo.svg" -o "$RES/drawable-$d/ic_notification.png"
 done
 
 echo "Done."

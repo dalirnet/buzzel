@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import Network
 
 private let cat = "TransportManager"
 
@@ -7,8 +8,8 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
   static let shared = TransportManager()
 
-  private static let pongTimeout: TimeInterval = 10
-  private static let pingInterval: TimeInterval = 30
+  private static let pongTimeout: TimeInterval = 5
+  private static let pingInterval: TimeInterval = 10
   private static let failoverTimeout: TimeInterval = 10
   private static let handshakeTimeout: TimeInterval = 30
   private static let maxReconnectAttempts = 2
@@ -18,10 +19,6 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   enum Transport: String {
     case wifi, ble
     var displayName: String { self == .wifi ? "WiFi" : "BLE" }
-  }
-
-  private struct FailoverStep {
-    let transport: Transport
   }
 
   @Published var connectionState: ConnectionState = .idle
@@ -45,7 +42,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
   private let maxLogEntries = 100
   private let deviceName = "Android"
 
-  private var failoverSteps: [FailoverStep] = []
+  private var failoverSteps: [Transport] = []
   private var failoverIndex = 0
   private var failoverWork: DispatchWorkItem?
   private var currentTransport: Transport?
@@ -85,12 +82,31 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
   // MARK: - Failover
 
+  private func resolvePreferredTransport(_ prefer: String) -> Transport {
+    if prefer == "ble" { return .ble }
+    if prefer == "wifi" { return .wifi }
+    // "auto": detect WiFi availability
+    let monitor = NWPathMonitor(requiredInterfaceType: .wifi)
+    let semaphore = DispatchSemaphore(value: 0)
+    var hasWifi = false
+    monitor.pathUpdateHandler = { path in
+      hasWifi = path.status == .satisfied
+      semaphore.signal()
+    }
+    let queue = DispatchQueue(label: "buzzel.wifi-check")
+    monitor.start(queue: queue)
+    _ = semaphore.wait(timeout: .now() + 1)
+    monitor.cancel()
+    FileLogger.info("Auto-detect: WiFi \(hasWifi ? "available" : "unavailable")", category: cat)
+    return hasWifi ? .wifi : .ble
+  }
+
   private func buildFailoverSteps(prefer: String) {
-    let primary: Transport = prefer == "ble" ? .ble : .wifi
+    let primary = resolvePreferredTransport(prefer)
     let secondary: Transport = primary == .wifi ? .ble : .wifi
-    failoverSteps = [FailoverStep(transport: primary), FailoverStep(transport: secondary)]
+    failoverSteps = [primary, secondary]
     FileLogger.debug(
-      "Failover steps: \(failoverSteps.map { $0.transport.rawValue }.joined(separator: ", "))",
+      "Failover steps: \(failoverSteps.map { $0.rawValue }.joined(separator: ", "))",
       category: cat)
   }
 
@@ -107,15 +123,15 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       FileLogger.error("Failover: no steps configured", category: cat)
       return
     }
-    let step = failoverSteps[failoverIndex % failoverSteps.count]
+    let transport = failoverSteps[failoverIndex % failoverSteps.count]
 
     FileLogger.info(
-      "Failover step \(failoverIndex): trying \(step.transport.rawValue) (timeout=\(Self.failoverTimeout)s)",
+      "Failover step \(failoverIndex): trying \(transport.rawValue) (timeout=\(Self.failoverTimeout)s)",
       category: cat)
     stopCurrentTransport()
     transitionTo(.connecting)
 
-    switch step.transport {
+    switch transport {
     case .wifi:
       currentTransport = .wifi
       tcpServer.start(port: BuzzelProtocol.tcpPort)
@@ -127,7 +143,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     let work = DispatchWorkItem { [weak self] in
       guard let self = self, self.connectionState == .connecting else { return }
       FileLogger.info(
-        "Failover timeout: \(step.transport.rawValue) did not connect in \(Self.failoverTimeout)s, advancing",
+        "Failover timeout: \(transport.rawValue) did not connect in \(Self.failoverTimeout)s, advancing",
         category: cat)
       self.failoverIndex += 1
       self.tryNextFailoverStep()
@@ -338,6 +354,15 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     }
   }
 
+  private func handleRemoteTermination() {
+    hasBeenConnected = false
+    transitionTo(.idle)
+    cancelFailover()
+    stopCurrentTransport()
+    AppStore.shared.pairedDevice = nil
+    AppStore.shared.save()
+  }
+
   private func handleDisconnect() {
     transitionTo(.idle)
     stopCurrentTransport()
@@ -502,21 +527,11 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
     case Signal.goodbye:
       appendEntry(.deviceDisconnected, "\(deviceName) said goodbye", direction: .incoming)
-      hasBeenConnected = false
-      transitionTo(.idle)
-      cancelFailover()
-      stopCurrentTransport()
-      AppStore.shared.pairedDevice = nil
-      AppStore.shared.save()
+      handleRemoteTermination()
 
     case Signal.unpair:
       appendEntry(.deviceDisconnected, "\(deviceName) unpaired", direction: .incoming)
-      hasBeenConnected = false
-      transitionTo(.idle)
-      cancelFailover()
-      stopCurrentTransport()
-      AppStore.shared.pairedDevice = nil
-      AppStore.shared.save()
+      handleRemoteTermination()
 
     case Signal.command:
       if let cmd = BuzzelProtocol.parseCommand(payload) {

@@ -82,12 +82,6 @@ class TransportManager(
         if (activeTransport == ActiveTransport.WIFI) activeTransport = ActiveTransport.NONE
     }
 
-    fun stopBle() {
-        FileLogger.d(TAG, "Stopping BLE")
-        bleServer.stop()
-        if (activeTransport == ActiveTransport.BLE) activeTransport = ActiveTransport.NONE
-    }
-
     fun stopAll() {
         FileLogger.i(TAG, "Stopping all transports")
         bleServer.stop()
@@ -120,11 +114,6 @@ class TransportManager(
         val delivered = latch.await(2, TimeUnit.SECONDS)
         FileLogger.d(TAG, "sendAndStop latch: delivered=$delivered")
         stopAll()
-    }
-
-    fun disconnectBle() {
-        FileLogger.d(TAG, "Disconnecting BLE device")
-        bleServer.disconnectDevice()
     }
 
     fun setBleLowPower(enabled: Boolean) {
