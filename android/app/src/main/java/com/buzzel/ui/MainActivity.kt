@@ -3,8 +3,6 @@ package com.buzzel.ui
 import android.Manifest
 import android.animation.ValueAnimator
 import android.app.Activity
-import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -54,7 +52,6 @@ class MainActivity : Activity() {
     companion object {
         private const val TAG = "MainActivity"
         private const val PERMISSION_REQUEST = 1001
-        private const val BT_ENABLE_REQUEST = 1002
 
         private val ICON_ARROW_DOWN = arrayOf(arrayOf("M12 5v14M5 12l7 7 7-7"))
         private val ICON_ARROW_UP = arrayOf(arrayOf("M12 19V5M5 12l7-7 7 7"))
@@ -168,7 +165,6 @@ class MainActivity : Activity() {
         }
         refreshState()
         if (hasAllPermissions()) {
-            promptEnableBluetooth()
             requestNotificationPermission()
         }
     }
@@ -206,7 +202,6 @@ class MainActivity : Activity() {
             )
             if (hasAllPermissions()) {
                 FileLogger.i(TAG, "All permissions granted — proceeding")
-                promptEnableBluetooth()
                 requestNotificationPermission()
                 if (app.configStore.pairingCode != null) {
                     startService()
@@ -228,14 +223,6 @@ class MainActivity : Activity() {
                 }
             }
             refreshState()
-        }
-    }
-
-    @Suppress("DEPRECATION")
-    private fun promptEnableBluetooth() {
-        val bt = (getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter ?: return
-        if (!bt.isEnabled) {
-            startActivityForResult(Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE), BT_ENABLE_REQUEST)
         }
     }
 

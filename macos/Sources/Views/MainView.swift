@@ -9,7 +9,6 @@ struct MainView: View {
   @State private var showQR = false
   @State private var showActivityLog = false
   @State private var showSettings = false
-  @State private var showBluetoothOffAlert = false
   @State private var qrMatrix: [[Bool]]?
   @State private var pairingCode = ""
   @State private var sessionId = ""
@@ -43,20 +42,6 @@ struct MainView: View {
       if state == .connected && showQR {
         closeQR()
       }
-    }
-    .onChange(of: transportManager.bluetoothPoweredOff) { isPoweredOff in
-      if isPoweredOff && transportManager.bleAuthorized {
-        showBluetoothOffAlert = true
-      }
-    }
-    .alert("Bluetooth is Off", isPresented: $showBluetoothOffAlert) {
-      Button("Open Settings") {
-        NSWorkspace.shared.open(
-          URL(string: "x-apple.systempreferences:com.apple.BluetoothSettings")!)
-      }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text("Turn on Bluetooth in System Settings to use Buzzel.")
     }
   }
 
