@@ -89,9 +89,11 @@ class MainActivity : Activity() {
     private lateinit var statusLine: TextView
     private lateinit var orbitRings: OrbitRingsView
     private lateinit var activityLogContainer: LinearLayout
+    private lateinit var settingsContainer: LinearLayout
     private lateinit var mainPanel: LinearLayout
 
     private var showActivityLog = false
+    private var showSettings = false
     private var scanMode = false
     private var currentStatusText = ""
     private var lastDarkMode = false
@@ -232,7 +234,7 @@ class MainActivity : Activity() {
             exitScanMode()
             return
         }
-        if (showActivityLog) {
+        if (showActivityLog || showSettings) {
             showMainView()
             return
         }
@@ -295,6 +297,21 @@ class MainActivity : Activity() {
             }
         rootLayout.addView(
             activityLogContainer,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f,
+            ),
+        )
+
+        // Settings container (hidden by default)
+        settingsContainer =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = View.GONE
+            }
+        rootLayout.addView(
+            settingsContainer,
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 0,
@@ -453,13 +470,14 @@ class MainActivity : Activity() {
         val title =
             when {
                 showActivityLog -> "Activity Log"
+                showSettings -> "Settings"
                 scanMode -> "Quick Setup"
                 else -> "Buzzel"
             }
         headerView.setTitle(title)
 
         // Trailing icon
-        if (showActivityLog || scanMode) {
+        if (showActivityLog || showSettings || scanMode) {
             headerView.setTrailingIcon(ICON_ZAP, SVGIconView.IconMode.FILL, AppColors.text)
             headerView.setTrailingIconEnabled(true)
         } else {
@@ -574,34 +592,121 @@ class MainActivity : Activity() {
     private fun onTrailingIconTap() {
         when {
             showActivityLog -> showMainView()
+            showSettings -> showMainView()
             scanMode -> exitScanMode()
-            else -> showSettingsDialog()
+            else -> showSettingsView()
         }
     }
 
-    private fun showSettingsDialog() {
-        val store = app.configStore
-        val current = store.preferTransport ?: "auto"
-        val options = arrayOf("Auto", "WiFi", "Bluetooth")
-        val values = arrayOf("auto", "wifi", "ble")
-        val selectedIndex = values.indexOf(current).coerceAtLeast(0)
+    private fun showSettingsView() {
+        showSettings = true
+        mainPanel.visibility = View.GONE
+        settingsContainer.visibility = View.VISIBLE
+        settingsContainer.removeAllViews()
 
-        val items = mutableListOf<Pair<String, () -> Unit>>()
-        for ((i, label) in options.withIndex()) {
-            val display = if (i == selectedIndex) "$label  \u2022" else label
-            items.add(
-                display to {
-                    store.preferTransport = values[i]
-                },
+        val view = buildSettingsView()
+        settingsContainer.addView(
+            view,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+
+        refreshState()
+    }
+
+    private fun buildSettingsView(): View {
+        val ctx = this
+        val store = app.configStore
+        val labels = arrayOf("Auto", "WiFi", "Bluetooth")
+        val values = arrayOf("auto", "wifi", "ble")
+
+        val container =
+            LinearLayout(ctx).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(16), dp(20), dp(16), 0)
+            }
+
+        // Section label
+        container.addView(
+            TextView(ctx).apply {
+                text = "Preferred Transport"
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                typeface = Brand.typeface
+                setTextColor(AppColors.secondary)
+                setPadding(0, 0, 0, dp(10))
+            },
+            matchWrap(),
+        )
+
+        // Segmented control container
+        val segmentContainer =
+            LinearLayout(ctx).apply {
+                orientation = LinearLayout.HORIZONTAL
+                background =
+                    GradientDrawable().apply {
+                        setColor(AppColors.withAlpha(AppColors.secondary, 20))
+                        cornerRadius = dp(10).toFloat()
+                    }
+                setPadding(dp(4), dp(4), dp(4), dp(4))
+            }
+
+        val current = store.preferTransport ?: "auto"
+        val segmentViews = mutableListOf<TextView>()
+
+        for ((i, label) in labels.withIndex()) {
+            val selected = values[i] == current
+            val tv =
+                TextView(ctx).apply {
+                    text = label
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    typeface = Brand.typeface
+                    gravity = Gravity.CENTER
+                    setPadding(0, dp(10), 0, dp(10))
+                    setTextColor(if (selected) AppColors.onButton else AppColors.secondary)
+                    background =
+                        if (selected) {
+                            GradientDrawable().apply {
+                                setColor(AppColors.accent)
+                                cornerRadius = dp(7).toFloat()
+                            }
+                        } else {
+                            null
+                        }
+                    isClickable = true
+                }
+            segmentViews.add(tv)
+            segmentContainer.addView(
+                tv,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
         }
-        val builder = android.app.AlertDialog.Builder(this)
-        builder.setTitle("Settings")
-        builder.setItems(items.map { it.first }.toTypedArray()) { _, which ->
-            items[which].second()
+
+        // Click handlers
+        for ((i, tv) in segmentViews.withIndex()) {
+            tv.setOnClickListener {
+                store.preferTransport = values[i]
+                // Update visuals
+                for ((j, other) in segmentViews.withIndex()) {
+                    val sel = j == i
+                    other.setTextColor(if (sel) AppColors.onButton else AppColors.secondary)
+                    other.background =
+                        if (sel) {
+                            GradientDrawable().apply {
+                                setColor(AppColors.accent)
+                                cornerRadius = dp(7).toFloat()
+                            }
+                        } else {
+                            null
+                        }
+                }
+            }
         }
-        builder.setNegativeButton("Close", null)
-        builder.show()
+
+        container.addView(segmentContainer, matchWrap())
+
+        return container
     }
 
     private fun showActivityLogView() {
@@ -624,9 +729,12 @@ class MainActivity : Activity() {
 
     private fun showMainView() {
         showActivityLog = false
+        showSettings = false
         mainPanel.visibility = View.VISIBLE
         activityLogContainer.visibility = View.GONE
         activityLogContainer.removeAllViews()
+        settingsContainer.visibility = View.GONE
+        settingsContainer.removeAllViews()
         refreshState()
     }
 

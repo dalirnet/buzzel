@@ -20,7 +20,7 @@ struct MainView: View {
   }
 
   private var isSubView: Bool {
-    showQR || showActivityLog
+    showQR || showActivityLog || showSettings
   }
 
   var body: some View {
@@ -32,6 +32,8 @@ struct MainView: View {
 
       if showActivityLog {
         ActivityLogView(transportManager: transportManager)
+      } else if showSettings {
+        SettingsView(store: store)
       } else {
         mainPanel
       }
@@ -49,6 +51,7 @@ struct MainView: View {
 
   private var headerTitle: String {
     if showActivityLog { return "Activity Log" }
+    if showSettings { return "Settings" }
     if showQR { return "Quick Setup" }
     return "Buzzel"
   }
@@ -63,6 +66,8 @@ struct MainView: View {
         Button {
           if showActivityLog {
             withAnimation(.easeInOut(duration: 0.2)) { showActivityLog = false }
+          } else if showSettings {
+            withAnimation(.easeInOut(duration: 0.2)) { showSettings = false }
           } else {
             closeQR()
           }
@@ -82,7 +87,7 @@ struct MainView: View {
         .help("Back")
       } else {
         Button {
-          showSettings.toggle()
+          withAnimation(.easeInOut(duration: 0.2)) { showSettings = true }
         } label: {
           SVGIconView(
             paths: Self.iconSettings,
@@ -97,53 +102,8 @@ struct MainView: View {
           if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
         .help("Settings")
-        .popover(isPresented: $showSettings, arrowEdge: .top) {
-          settingsPopover
-        }
       }
     }
-  }
-
-  // MARK: - Settings Popover
-
-  private var settingsPopover: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      Text("Preferred Transport")
-        .font(Brand.font(size: 11))
-        .foregroundColor(DesignColor.secondary)
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 6)
-
-      ForEach(["auto", "wifi", "ble"], id: \.self) { method in
-        Button {
-          store.transportMethod = method
-          store.save()
-        } label: {
-          HStack(spacing: 8) {
-            Text(method == "auto" ? "Auto" : method == "wifi" ? "WiFi" : "Bluetooth")
-              .font(Brand.font(size: 13))
-              .foregroundColor(DesignColor.text)
-            Spacer()
-            if store.transportMethod == method {
-              Circle()
-                .fill(DesignColor.accent)
-                .frame(width: 6, height: 6)
-            }
-          }
-          .padding(.horizontal, 16)
-          .padding(.vertical, 8)
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { inside in
-          if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
-      }
-
-    }
-    .padding(.bottom, 8)
-    .frame(width: 180)
   }
 
   // MARK: - Main Panel
