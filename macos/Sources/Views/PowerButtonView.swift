@@ -8,7 +8,6 @@ struct PowerButtonView: View {
   var onTap: (() -> Void)? = nil
 
   @State private var pulsing = false
-  @State private var spinning = false
   @State private var isPressed = false
   @State private var haloPulsing = false
   @State private var isActive = true
@@ -101,7 +100,7 @@ struct PowerButtonView: View {
       case .unpaired: return .zap
       case .connecting: return .loading
       case .connected: return .zap
-      case .disconnected: return ready ? .play : .unlink
+      case .disconnected: return .zap
       }
     }()
 
@@ -110,13 +109,19 @@ struct PowerButtonView: View {
       let iconSize = size * 0.38
       let scale = iconSize / 24.0
       let offset = (size - iconSize) / 2
+      let center = UnitPoint(x: (offset + iconSize / 2) / size, y: (offset + iconSize / 2) / size)
 
-      icon.view(scale: scale, offset: offset)
-        .rotationEffect(icon == .loading && spinning ? .degrees(360) : .degrees(0))
-        .animation(
-          icon == .loading && spinning
-            ? .linear(duration: 1.2).repeatForever(autoreverses: false) : .default,
-          value: spinning)
+      if icon == .loading {
+        TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
+          icon.view(scale: scale, offset: offset)
+            .rotationEffect(
+              .degrees(timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360),
+              anchor: center
+            )
+        }
+      } else {
+        icon.view(scale: scale, offset: offset)
+      }
     }
   }
 
@@ -132,7 +137,6 @@ struct PowerButtonView: View {
 
   private func updatePulse() {
     pulsing = state == .connecting
-    spinning = state == .connecting
   }
 
   // MARK: - Icons
