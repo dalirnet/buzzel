@@ -12,8 +12,6 @@ protocol BleCentralDelegate: AnyObject {
 
 class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeripheralDelegate {
 
-  private static let reconnectDelay: TimeInterval = 2
-
   weak var delegate: BleCentralDelegate?
 
   @Published var bluetoothAuthorization: CBManagerAuthorization = CBCentralManager.authorization
@@ -23,7 +21,6 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
   private var peripheral: CBPeripheral?
   private var dataCharacteristic: CBCharacteristic?
   private var isStopped = false
-  private var reconnectWork: DispatchWorkItem?
 
   // Reassembly buffer for length-prefixed frames
   private var recvBuffer = Data()
@@ -44,13 +41,12 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
 
   var isConnected: Bool { peripheral?.state == .connected }
   var peripheralIdentifier: UUID? { peripheral?.identifier }
+  var hasQueuedWrites: Bool { isWriting || !writeQueue.isEmpty }
 
   // MARK: - Public API
 
   func start() {
     FileLogger.debug("start", category: cat)
-    reconnectWork?.cancel()
-    reconnectWork = nil
     isStopped = false
     if centralManager == nil {
       centralManager = CBCentralManager(delegate: self, queue: nil)
@@ -61,8 +57,6 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
 
   func stop() {
     FileLogger.debug("stop", category: cat)
-    reconnectWork?.cancel()
-    reconnectWork = nil
     isStopped = true
     centralManager?.stopScan()
     if let p = peripheral {
@@ -105,7 +99,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
       self.bluetoothAuthorization = CBCentralManager.authorization
       self.bluetoothPoweredOff = central.state == .poweredOff
     }
-    if central.state == .poweredOn {
+    if central.state == .poweredOn && !isStopped {
       central.scanForPeripherals(withServices: [serviceUUID], options: nil)
     }
   }
@@ -138,7 +132,7 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
       category: cat)
     resetConnectionState()
     if isStopped { return }
-    scheduleReconnect()
+    delegate?.bleDidDisconnect()
   }
 
   func centralManager(
@@ -150,7 +144,6 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     resetConnectionState()
     if isStopped { return }
     delegate?.bleDidDisconnect()
-    scheduleReconnect()
   }
 
   private func resetConnectionState() {
@@ -162,16 +155,6 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     isWriting = false
   }
 
-  private func scheduleReconnect() {
-    FileLogger.debug("scheduleReconnect", category: cat)
-    reconnectWork?.cancel()
-    let work = DispatchWorkItem { [weak self] in
-      guard let self = self, !self.isStopped else { return }
-      self.centralManager?.scanForPeripherals(withServices: [self.serviceUUID], options: nil)
-    }
-    reconnectWork = work
-    DispatchQueue.main.asyncAfter(deadline: .now() + Self.reconnectDelay, execute: work)
-  }
 
   // MARK: - CBPeripheralDelegate
 

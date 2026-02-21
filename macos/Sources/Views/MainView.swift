@@ -162,8 +162,6 @@ struct MainView: View {
         Button {
           showSettings = false
           transportManager.stop()
-          store.pairedDevice = nil
-          store.save()
         } label: {
           Text("Unpair Device")
             .font(Brand.font(size: 13))
@@ -189,7 +187,7 @@ struct MainView: View {
     VStack(spacing: 0) {
       Spacer()
 
-      OrbitRingsView(deviceName: powerState == .connected ? store.pairedDevice?.name : nil) {
+      OrbitRingsView(deviceName: store.pairedDevice?.name, isConnected: powerState == .connected) {
         AnimatedSwitcher(key: showQR) { isQR in
           if isQR {
             qrContent
@@ -324,9 +322,9 @@ struct MainView: View {
     case .unpaired:
       openQR()
     case .connecting:
-      transportManager.stop()
+      transportManager.disconnect()
     case .connected:
-      transportManager.stop()
+      transportManager.disconnect()
     case .disconnected:
       transportManager.start()
     }

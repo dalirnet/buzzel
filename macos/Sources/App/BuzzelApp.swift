@@ -42,10 +42,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
       onLeftClick: { [weak self] in self?.showMainWindow() }
     )
     configureMainWindow()
-
-    // No auto-reconnect on launch — user must scan QR each time
-    store.pairedDevice = nil
-    store.save()
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

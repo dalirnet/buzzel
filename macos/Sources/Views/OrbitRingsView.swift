@@ -4,6 +4,7 @@ import SwiftUI
 
 struct OrbitRingsView<Content: View>: View {
   var deviceName: String?
+  var isConnected: Bool = true
   @ViewBuilder let content: () -> Content
 
   @State private var startDate = Date.now
@@ -85,7 +86,7 @@ struct OrbitRingsView<Content: View>: View {
       .lineLimit(1)
       .padding(.horizontal, 6)
       .padding(.vertical, 3)
-      .background(DesignColor.green.opacity(0.15))
+      .background((isConnected ? DesignColor.green : DesignColor.red).opacity(0.15))
       .clipShape(Capsule())
       .rotationEffect(.degrees(-(angle + planetOffset * 360)))
       .offset(x: ring.radius)

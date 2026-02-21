@@ -78,7 +78,7 @@ class StatusBarController {
   @objc private func openApp() { onLeftClick() }
 
   @objc private func quitApp() {
-    transportManager.stop()
+    transportManager.disconnect()
     NSApp.terminate(nil)
   }
 

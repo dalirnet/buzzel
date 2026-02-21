@@ -318,11 +318,26 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     startFailover(prefer: prefer)
   }
 
-  func stop() {
-    FileLogger.info("TransportManager stopping", category: cat)
+  func disconnect() {
+    FileLogger.info("TransportManager disconnecting (soft)", category: cat)
     let wasActive = connectionState == .active || connectionState == .handshaking
     if wasActive {
       send(BuzzelProtocol.createGoodbye())
+    }
+    transitionTo(.idle)
+    cancelFailover()
+    if wasActive {
+      waitForBleQueueThenStop()
+    } else {
+      stopCurrentTransport()
+    }
+  }
+
+  func stop() {
+    FileLogger.info("TransportManager stopping (unpair)", category: cat)
+    let wasActive = connectionState == .active || connectionState == .handshaking
+    if wasActive {
+      send(BuzzelProtocol.createUnpair())
     }
     hasBeenConnected = false
     transitionTo(.idle)
@@ -330,14 +345,23 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     AppStore.shared.pairedDevice = nil
     AppStore.shared.save()
     if wasActive {
-      // Delay teardown so goodbye has time to be delivered
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-        self?.stopCurrentTransport()
-        FileLogger.info("TransportManager stopped", category: cat)
-      }
+      waitForBleQueueThenStop()
     } else {
       stopCurrentTransport()
       FileLogger.info("TransportManager stopped", category: cat)
+    }
+  }
+
+  private func waitForBleQueueThenStop(elapsed: Int = 0) {
+    let maxWaitMs = 2000
+    let pollMs = 100
+    if !ble.hasQueuedWrites || elapsed >= maxWaitMs {
+      stopCurrentTransport()
+      FileLogger.info("TransportManager stopped", category: cat)
+      return
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(pollMs)) { [weak self] in
+      self?.waitForBleQueueThenStop(elapsed: elapsed + pollMs)
     }
   }
 
@@ -361,6 +385,12 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     stopCurrentTransport()
     AppStore.shared.pairedDevice = nil
     AppStore.shared.save()
+  }
+
+  private func handleRemoteSoftDisconnect() {
+    transitionTo(.idle)
+    stopCurrentTransport()
+    startFailover(prefer: AppStore.shared.transportMethod)
   }
 
   private func handleDisconnect() {
@@ -407,8 +437,9 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     cancelFailover()
     stopCurrentTransport()
     FileLogger.info("Starting both transports for pairing", category: cat)
-    transitionTo(.connecting)
     currentTransport = nil
+    transitionTo(.connecting)
+    connectingTransport = "BLE + WiFi"
     tcpServer.start(port: BuzzelProtocol.tcpPort)
     ble.start()
   }
@@ -446,6 +477,8 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       onDeviceReady?()
     } else {
       send(BuzzelProtocol.createPairResponse(accepted: false, reason: 0x01))
+      pairingCode = nil
+      pairingSessionId = nil
       pairingError = "Invalid pairing code"
       appendEntry(
         .pairingFailed, "Invalid pairing code", direction: .incoming, status: .failed)
@@ -496,6 +529,8 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
           transitionTo(.active)
           onDeviceReady?()
         } else {
+          pairingCode = nil
+          pairingSessionId = nil
           appendEntry(.pairingFailed, "Pairing rejected", direction: .incoming, status: .failed)
           handleDisconnect()
         }
@@ -526,8 +561,8 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
       }
 
     case Signal.goodbye:
-      appendEntry(.deviceDisconnected, "\(deviceName) said goodbye", direction: .incoming)
-      handleRemoteTermination()
+      appendEntry(.deviceDisconnected, "\(deviceName) disconnected", direction: .incoming)
+      handleRemoteSoftDisconnect()
 
     case Signal.unpair:
       appendEntry(.deviceDisconnected, "\(deviceName) unpaired", direction: .incoming)
