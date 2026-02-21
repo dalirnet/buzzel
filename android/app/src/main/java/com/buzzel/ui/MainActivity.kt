@@ -458,6 +458,9 @@ class MainActivity : Activity() {
         powerButton.ready = state == PowerButtonState.DISCONNECTED && !app.hasBeenConnected
         powerButton.state = state
         powerButton.onTap = { onPowerButtonTap(state) }
+        powerButton.onUnpairWarning = { onPowerButtonHoldWarning(state) }
+        powerButton.onUnpair = { onPowerButtonUnpair(state) }
+        powerButton.onHoldCancel = { refreshStatusLine() }
 
         // Header
         val title =
@@ -876,20 +879,41 @@ class MainActivity : Activity() {
             }
 
             PowerButtonState.CONNECTING -> {
-                startService(Intent(this, BuzzelService::class.java).apply {
-                    action = BuzzelService.ACTION_SOFT_DISCONNECT
-                })
+                startService(
+                    Intent(this, BuzzelService::class.java).apply {
+                        action = BuzzelService.ACTION_SOFT_DISCONNECT
+                    },
+                )
             }
 
             PowerButtonState.CONNECTED -> {
-                startService(Intent(this, BuzzelService::class.java).apply {
-                    action = BuzzelService.ACTION_SOFT_DISCONNECT
-                })
+                startService(
+                    Intent(this, BuzzelService::class.java).apply {
+                        action = BuzzelService.ACTION_SOFT_DISCONNECT
+                    },
+                )
             }
 
             PowerButtonState.DISCONNECTED -> {
                 startService()
             }
+        }
+    }
+
+    private fun onPowerButtonHoldWarning(state: PowerButtonState) {
+        if (state == PowerButtonState.CONNECTING || state == PowerButtonState.CONNECTED || state == PowerButtonState.DISCONNECTED) {
+            setStatusText("Keep pressing to unpair")
+        }
+    }
+
+    private fun onPowerButtonUnpair(state: PowerButtonState) {
+        if (state == PowerButtonState.CONNECTING || state == PowerButtonState.CONNECTED || state == PowerButtonState.DISCONNECTED) {
+            startService(
+                Intent(this, BuzzelService::class.java).apply {
+                    action = BuzzelService.ACTION_UNPAIR
+                },
+            )
+            refreshState()
         }
     }
 

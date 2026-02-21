@@ -6,34 +6,92 @@ struct PowerButtonView: View {
   let state: PowerButtonState
   var ready: Bool = false
   var onTap: (() -> Void)? = nil
+  var onUnpairWarning: (() -> Void)? = nil
+  var onUnpair: (() -> Void)? = nil
+  var onHoldCancel: (() -> Void)? = nil
 
   @State private var pulsing = false
   @State private var isPressed = false
   @State private var haloPulsing = false
   @State private var isActive = true
+  @State private var unpairProgress: CGFloat = 0
+  @State private var holdStart: Date?
+  @State private var holdWarningFired = false
+  @State private var holdUnpairFired = false
+
+  private let holdWarningDuration: TimeInterval = 2.0
+  private let holdUnpairDuration: TimeInterval = 4.0
+
+  private var canUnpair: Bool {
+    state == .connecting || state == .connected || state == .disconnected
+  }
 
   var body: some View {
     ZStack {
       haloView
 
       Circle()
-        .stroke(stateColor.opacity(isPressed ? 0.3 : 0), lineWidth: 2)
+        .stroke(displayColor.opacity(isPressed ? 0.3 : 0), lineWidth: 2)
         .scaleEffect(isPressed ? 1.3 : 1.0)
 
       pulseContent
+
     }
     .scaleEffect(isPressed ? 0.85 : 1.0)
-    .animation(.easeInOut(duration: 0.3), value: stateColor)
+    .animation(.easeInOut(duration: 0.3), value: displayColor)
     .animation(.spring(response: 0.3, dampingFraction: 0.5), value: isPressed)
-    .onTapGesture {
-      isPressed = true
-      onTap?()
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-        isPressed = false
-      }
-    }
+    .gesture(
+      DragGesture(minimumDistance: 0)
+        .onChanged { _ in
+          guard holdStart == nil else { return }
+          holdStart = Date()
+          holdWarningFired = false
+          holdUnpairFired = false
+          isPressed = true
+        }
+        .onEnded { _ in
+          holdStart = nil
+          unpairProgress = 0
+          if !holdUnpairFired && !holdWarningFired {
+            onTap?()
+          }
+          if holdWarningFired && !holdUnpairFired {
+            onHoldCancel?()
+          }
+          holdWarningFired = false
+          holdUnpairFired = false
+          isPressed = false
+        }
+    )
     .onHover { inside in
       if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+    }
+    .overlay {
+      TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: holdStart == nil || !canUnpair))
+      { timeline in
+        Color.clear
+          .onChange(of: timeline.date) { _ in
+            guard canUnpair, let start = holdStart, !holdUnpairFired else { return }
+            let elapsed = Date().timeIntervalSince(start)
+            if elapsed >= holdUnpairDuration {
+              holdUnpairFired = true
+              unpairProgress = 1
+              onUnpair?()
+              holdStart = nil
+              DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isPressed = false
+                unpairProgress = 0
+              }
+            } else if elapsed >= holdWarningDuration {
+              if !holdWarningFired {
+                holdWarningFired = true
+                onUnpairWarning?()
+              }
+              let progressDuration = holdUnpairDuration - holdWarningDuration
+              unpairProgress = (elapsed - holdWarningDuration) / progressDuration
+            }
+          }
+      }
     }
     .onChange(of: state) { _ in updatePulse() }
     .onAppear {
@@ -62,13 +120,13 @@ struct PowerButtonView: View {
   private var haloView: some View {
     if isActive {
       Circle()
-        .fill(stateColor.opacity(haloPulsing ? 0.10 : 0.05))
+        .fill(displayColor.opacity(haloPulsing ? 0.10 : 0.05))
         .scaleEffect(haloPulsing ? 1.30 : 1.15)
         .animation(
           .easeInOut(duration: 2.0).repeatForever(autoreverses: true), value: haloPulsing)
     } else {
       Circle()
-        .fill(stateColor.opacity(0.05))
+        .fill(displayColor.opacity(0.05))
         .scaleEffect(1.15)
     }
   }
@@ -78,7 +136,7 @@ struct PowerButtonView: View {
     if isActive && pulsing {
       Group {
         Circle()
-          .fill(stateColor)
+          .fill(displayColor)
           .scaleEffect(0.88)
         iconView
           .scaleEffect(0.88)
@@ -87,7 +145,7 @@ struct PowerButtonView: View {
         .easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: pulsing)
     } else {
       Circle()
-        .fill(stateColor)
+        .fill(displayColor)
       iconView
     }
   }
@@ -115,7 +173,9 @@ struct PowerButtonView: View {
         TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { timeline in
           icon.view(scale: scale, offset: offset)
             .rotationEffect(
-              .degrees(timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2) / 1.2 * 360),
+              .degrees(
+                timeline.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.2)
+                  / 1.2 * 360),
               anchor: center
             )
         }
@@ -133,6 +193,35 @@ struct PowerButtonView: View {
     case .connected: return DesignColor.mutedGreen
     case .disconnected: return ready ? DesignColor.accent : DesignColor.mutedRed
     }
+  }
+
+  private var displayColor: Color {
+    if unpairProgress > 0 {
+      return blend(from: stateColor, to: DesignColor.mutedGray, fraction: unpairProgress)
+    }
+    return stateColor
+  }
+
+  private func blend(from: Color, to: Color, fraction: CGFloat) -> Color {
+    let f = min(max(fraction, 0), 1)
+    let fromComponents = NSColor(from).usingColorSpace(.sRGB) ?? NSColor(from)
+    let toComponents = NSColor(to).usingColorSpace(.sRGB) ?? NSColor(to)
+    var fr: CGFloat = 0
+    var fg: CGFloat = 0
+    var fb: CGFloat = 0
+    var fa: CGFloat = 0
+    var tr: CGFloat = 0
+    var tg: CGFloat = 0
+    var tb: CGFloat = 0
+    var ta: CGFloat = 0
+    fromComponents.getRed(&fr, green: &fg, blue: &fb, alpha: &fa)
+    toComponents.getRed(&tr, green: &tg, blue: &tb, alpha: &ta)
+    return Color(
+      red: fr + (tr - fr) * f,
+      green: fg + (tg - fg) * f,
+      blue: fb + (tb - fb) * f,
+      opacity: fa + (ta - fa) * f
+    )
   }
 
   private func updatePulse() {

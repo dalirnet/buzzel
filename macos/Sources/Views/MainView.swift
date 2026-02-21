@@ -15,6 +15,7 @@ struct MainView: View {
   @State private var sessionId = ""
   @State private var displayedStatusText = ""
   @State private var statusFlipAngle: Double = 0
+  @State private var statusOverride: String?
   private var powerState: PowerButtonState {
     PowerButtonState.current(store: store, transportManager: transportManager)
   }
@@ -194,10 +195,12 @@ struct MainView: View {
           } else {
             PowerButtonView(
               state: powerState,
-              ready: powerState == .disconnected && !transportManager.hasBeenConnected
-            ) {
-              onPowerButtonTap()
-            }
+              ready: powerState == .disconnected && !transportManager.hasBeenConnected,
+              onTap: { onPowerButtonTap() },
+              onUnpairWarning: { onPowerButtonHoldWarning() },
+              onUnpair: { onPowerButtonUnpair() },
+              onHoldCancel: { onPowerButtonHoldCancel() }
+            )
             .frame(width: 94, height: 94)
           }
         }
@@ -233,6 +236,9 @@ struct MainView: View {
   // MARK: - Status Line
 
   private var statusText: String {
+    if let override = statusOverride {
+      return override
+    }
     if showQR {
       if let error = transportManager.pairingError {
         return error
@@ -313,6 +319,33 @@ struct MainView: View {
     showQR = false
     transportManager.stopPairingMode()
     transportManager.onPairingComplete = nil
+  }
+
+  private func onPowerButtonHoldWarning() {
+    switch powerState {
+    case .connecting, .connected, .disconnected:
+      overrideStatusText("Keep pressing to unpair")
+    default:
+      break
+    }
+  }
+
+  private func onPowerButtonUnpair() {
+    switch powerState {
+    case .connecting, .connected, .disconnected:
+      statusOverride = nil
+      transportManager.stop()
+    default:
+      break
+    }
+  }
+
+  private func onPowerButtonHoldCancel() {
+    overrideStatusText(nil)
+  }
+
+  private func overrideStatusText(_ text: String?) {
+    statusOverride = text
   }
 
   private func onPowerButtonTap() {

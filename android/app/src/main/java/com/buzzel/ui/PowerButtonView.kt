@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.view.MotionEvent
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.view.animation.LinearInterpolator
@@ -40,6 +41,9 @@ class PowerButtonView(
     private var readyChanged = false
 
     var onTap: (() -> Unit)? = null
+    var onUnpairWarning: (() -> Unit)? = null
+    var onUnpair: (() -> Unit)? = null
+    var onHoldCancel: (() -> Unit)? = null
 
     private val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
     private val circlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
@@ -64,6 +68,7 @@ class PowerButtonView(
     private var haloFraction: Float = 0f
 
     private var spinAngle: Float = 0f
+    private var unpairProgress: Float = 0f
     private var pulseAnimator: ValueAnimator? = null
     private var spinAnimator: ValueAnimator? = null
     private var colorAnimator: ValueAnimator? = null
@@ -71,13 +76,77 @@ class PowerButtonView(
     private var rippleAnimator: ValueAnimator? = null
     private var haloAnimator: ValueAnimator? = null
 
+    private val canUnpair: Boolean
+        get() = state == PowerButtonState.CONNECTING || state == PowerButtonState.CONNECTED || state == PowerButtonState.DISCONNECTED
+
+    private var holdWarningFired = false
+    private var holdUnpairFired = false
+    private var holdStartTime = 0L
+    private val holdTickRunnable =
+        object : Runnable {
+            override fun run() {
+                if (holdStartTime == 0L || holdUnpairFired) return
+                val elapsed = System.currentTimeMillis() - holdStartTime
+                if (elapsed >= HOLD_UNPAIR_MS) {
+                    holdUnpairFired = true
+                    unpairProgress = 1f
+                    invalidate()
+                    onUnpair?.invoke()
+                    animatePress()
+                    return
+                }
+                if (elapsed >= HOLD_WARNING_MS) {
+                    if (!holdWarningFired) {
+                        holdWarningFired = true
+                        onUnpairWarning?.invoke()
+                    }
+                    val progressDuration = HOLD_UNPAIR_MS - HOLD_WARNING_MS
+                    unpairProgress = (elapsed - HOLD_WARNING_MS).toFloat() / progressDuration.toFloat()
+                    invalidate()
+                }
+                postDelayed(this, 16)
+            }
+        }
+
     init {
         isClickable = true
-        setOnClickListener {
-            animatePress()
-            onTap?.invoke()
-        }
         updatePulse()
+    }
+
+    @Suppress("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                holdWarningFired = false
+                holdUnpairFired = false
+                unpairProgress = 0f
+                pressAnimator?.cancel()
+                pressScale = 0.85f
+                invalidate()
+                if (canUnpair) {
+                    holdStartTime = System.currentTimeMillis()
+                    post(holdTickRunnable)
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(holdTickRunnable)
+                holdStartTime = 0L
+                if (!holdUnpairFired && !holdWarningFired) {
+                    onTap?.invoke()
+                }
+                if (holdWarningFired && !holdUnpairFired) {
+                    onHoldCancel?.invoke()
+                }
+                unpairProgress = 0f
+                holdWarningFired = false
+                holdUnpairFired = false
+                animatePress()
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
     }
 
     private fun stateColor(s: PowerButtonState): Int =
@@ -88,6 +157,15 @@ class PowerButtonView(
             PowerButtonState.CONNECTED -> AppColors.mutedGreen
             PowerButtonState.DISCONNECTED -> if (ready) AppColors.accent else AppColors.mutedRed
         }
+
+    private val argbEvaluator = ArgbEvaluator()
+
+    private fun displayColor(): Int {
+        if (unpairProgress > 0f) {
+            return argbEvaluator.evaluate(unpairProgress.coerceIn(0f, 1f), currentColor, AppColors.mutedGray) as Int
+        }
+        return currentColor
+    }
 
     // region Animation
 
@@ -154,9 +232,11 @@ class PowerButtonView(
         pressAnimator?.cancel()
         rippleAnimator?.cancel()
 
+        // Spring back from current press scale
         pressAnimator =
-            ValueAnimator.ofFloat(1f, 0.85f).apply {
-                duration = 100
+            ValueAnimator.ofFloat(pressScale, 1f).apply {
+                duration = 300
+                interpolator = OvershootInterpolator(2f)
                 addUpdateListener {
                     pressScale = it.animatedValue as Float
                     invalidate()
@@ -175,20 +255,6 @@ class PowerButtonView(
                 }
                 start()
             }
-
-        postDelayed({
-            pressAnimator?.cancel()
-            pressAnimator =
-                ValueAnimator.ofFloat(pressScale, 1f).apply {
-                    duration = 300
-                    interpolator = OvershootInterpolator(2f)
-                    addUpdateListener {
-                        pressScale = it.animatedValue as Float
-                        invalidate()
-                    }
-                    start()
-                }
-        }, 200)
     }
 
     private fun startHaloPulse() {
@@ -218,6 +284,8 @@ class PowerButtonView(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        removeCallbacks(holdTickRunnable)
+        holdStartTime = 0L
         pulseAnimator?.cancel()
         spinAnimator?.cancel()
         colorAnimator?.cancel()
@@ -259,21 +327,23 @@ class PowerButtonView(
         val viewRadius = min(cx, cy)
         val btnRadius = viewRadius * pressScale
 
+        val color = displayColor()
+
         val haloScale = 1.15f + haloFraction * 0.15f
         val haloAlpha = (13 + haloFraction * 13).toInt()
         val haloRadius = btnRadius * haloScale
-        haloPaint.color = AppColors.withAlpha(currentColor, haloAlpha)
+        haloPaint.color = AppColors.withAlpha(color, haloAlpha)
         canvas.drawCircle(cx, cy, haloRadius, haloPaint)
 
         if (rippleAlpha > 0f) {
             val rr = btnRadius * rippleScale
-            ripplePaint.color = AppColors.withAlpha(currentColor, (rippleAlpha * 255).toInt())
+            ripplePaint.color = AppColors.withAlpha(color, (rippleAlpha * 255).toInt())
             ripplePaint.strokeWidth = viewRadius * 0.04f
             canvas.drawCircle(cx, cy, rr, ripplePaint)
         }
 
         val circleRadius = btnRadius * pulseScale
-        circlePaint.color = currentColor
+        circlePaint.color = color
         canvas.drawCircle(cx, cy, circleRadius, circlePaint)
 
         val iconSize = circleRadius * 2 * 0.38f
@@ -349,6 +419,9 @@ class PowerButtonView(
     // endregion
 
     companion object {
+        const val HOLD_WARNING_MS = 2000L
+        const val HOLD_UNPAIR_MS = 4000L
+
         private const val FINGER_ACCESS_PATH =
             "M12,3.75C7.444,3.75 3.75,7.444 3.75,12C3.75,12.631 3.821,13.245 3.954,13.834C4.046,14.238 3.793,14.64 3.389,14.731C2.985,14.823 2.583,14.57 2.492,14.166C2.333,13.469 2.25,12.744 2.25,12C2.25,6.615 6.615,2.25 12,2.25C17.385,2.25 21.75,6.615 21.75,12C21.75,14.071 20.071,15.75 18,15.75C15.929,15.75 14.25,14.071 14.25,12C14.25,10.757 13.243,9.75 12,9.75C10.757,9.75 9.75,10.757 9.75,12C9.75,12.746 9.861,13.997 10.607,15.47C11.352,16.942 12.753,18.681 15.403,20.367C15.752,20.59 15.855,21.053 15.633,21.403C15.41,21.752 14.947,21.855 14.597,21.633C11.747,19.819 10.148,17.886 9.268,16.147C8.389,14.41 8.25,12.911 8.25,12C8.25,9.929 9.929,8.25 12,8.25C14.071,8.25 15.75,9.929 15.75,12C15.75,13.243 16.757,14.25 18,14.25C19.243,14.25 20.25,13.243 20.25,12C20.25,7.444 16.556,3.75 12,3.75ZM12,6.75C9.1,6.75 6.75,9.1 6.75,12C6.75,15.106 7.666,17.132 9.586,19.531C9.844,19.855 9.792,20.327 9.468,20.586C9.145,20.844 8.673,20.792 8.414,20.469C6.334,17.868 5.25,15.521 5.25,12C5.25,8.272 8.272,5.25 12,5.25C15.728,5.25 18.75,8.272 18.75,12C18.75,12.414 18.414,12.75 18,12.75C17.586,12.75 17.25,12.414 17.25,12C17.25,9.1 14.899,6.75 12,6.75ZM12.746,11.925C12.971,14.171 14.204,15.758 15.426,16.806C16.035,17.328 16.632,17.707 17.076,17.954C17.297,18.078 17.479,18.167 17.602,18.225C17.664,18.254 17.711,18.275 17.741,18.288L17.773,18.302L17.779,18.304C18.163,18.458 18.35,18.894 18.196,19.279C18.043,19.663 17.606,19.85 17.222,19.696L17.218,19.695L17.213,19.693L17.198,19.687C17.191,19.684 17.182,19.68 17.172,19.676C17.164,19.673 17.156,19.669 17.146,19.665C17.103,19.646 17.042,19.619 16.966,19.584C16.814,19.513 16.601,19.407 16.346,19.264C15.836,18.981 15.152,18.547 14.45,17.944C13.046,16.742 11.529,14.829 11.254,12.075C11.213,11.663 11.513,11.295 11.925,11.254C12.338,11.213 12.705,11.513 12.746,11.925Z"
 
