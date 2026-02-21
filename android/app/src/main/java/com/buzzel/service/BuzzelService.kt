@@ -440,6 +440,7 @@ class BuzzelService : Service() {
                 performSoftDisconnect()
                 return START_NOT_STICKY
             }
+
             ACTION_UNPAIR -> {
                 performUnpair()
                 return START_NOT_STICKY

@@ -155,7 +155,6 @@ class BleCentral: NSObject, ObservableObject, CBCentralManagerDelegate, CBPeriph
     isWriting = false
   }
 
-
   // MARK: - CBPeripheralDelegate
 
   func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
