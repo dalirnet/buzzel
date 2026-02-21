@@ -88,8 +88,6 @@ class BuzzelApp : Application() {
         FileLogger.init(this)
         FileLogger.i(TAG, "Application created — log: ${FileLogger.path()}")
         configStore = ConfigStore(this)
-        // No auto-reconnect — user must scan QR each time
-        configStore.clearPairing()
         createNotificationChannel()
     }
 

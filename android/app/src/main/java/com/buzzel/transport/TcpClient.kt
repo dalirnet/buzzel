@@ -64,6 +64,7 @@ class TcpClient(
         host: String,
         port: Int,
     ) {
+        var didConnect = false
         try {
             val sock = Socket()
             sock.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
@@ -71,12 +72,15 @@ class TcpClient(
             FileLogger.i(TAG, "Connected to $host:$port")
             socket = sock
             outputStream = sock.getOutputStream()
+            didConnect = true
             onConnectionChanged(true)
             readLoop(sock)
         } catch (e: IOException) {
             if (running) FileLogger.w(TAG, "Connect failed: ${e.message}")
         } finally {
-            onConnectionChanged(false)
+            if (didConnect) {
+                onConnectionChanged(false)
+            }
         }
     }
 

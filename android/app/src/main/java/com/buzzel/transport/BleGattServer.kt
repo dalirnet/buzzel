@@ -252,23 +252,21 @@ class BleGattServer(
                 FileLogger.w(TAG, "Failed to send notification chunk $i/${chunks.size}")
                 return false
             }
-            if (i < chunks.size - 1) {
-                val status = notificationSentSignal.poll(NOTIFICATION_TIMEOUT_SEC, TimeUnit.SECONDS)
-                if (status == null) {
-                    FileLogger.w(TAG, "Timeout waiting for onNotificationSent at chunk $i/${chunks.size}")
-                    return false
-                }
-                if (status != BluetoothGatt.GATT_SUCCESS) {
-                    FileLogger.w(TAG, "Notification failed with status $status at chunk $i/${chunks.size}")
-                    return false
-                }
+            val status = notificationSentSignal.poll(NOTIFICATION_TIMEOUT_SEC, TimeUnit.SECONDS)
+            if (status == null) {
+                FileLogger.w(TAG, "Timeout waiting for onNotificationSent at chunk $i/${chunks.size}")
+                return false
+            }
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                FileLogger.w(TAG, "Notification failed with status $status at chunk $i/${chunks.size}")
+                return false
             }
         }
         return true
     }
 
     val isConnected: Boolean
-        get() = connectedDevice != null
+        get() = connectedDevice != null && subscribedToNotifications
 
     private fun setupService() {
         val service = BluetoothGattService(BleUuids.SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)

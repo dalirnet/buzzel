@@ -478,7 +478,9 @@ class MainActivity : Activity() {
         }
 
         // Device planet on orbit rings
-        orbitRings.deviceName = if (state == PowerButtonState.CONNECTED) app.connectedDeviceName else null
+        val isPaired = app.configStore.pairingCode != null
+        orbitRings.deviceName = if (isPaired) "Mac" else null
+        orbitRings.isDeviceConnected = state == PowerButtonState.CONNECTED
 
         refreshStatusLine()
     }
@@ -606,9 +608,9 @@ class MainActivity : Activity() {
         if (store.pairingCode != null) {
             items.add(
                 "Unpair Device" to {
-                    stopService(android.content.Intent(this, BuzzelService::class.java))
-                    store.clearPairing()
-                    app.hasBeenConnected = false
+                    startService(Intent(this, BuzzelService::class.java).apply {
+                        action = BuzzelService.ACTION_UNPAIR
+                    })
                     refreshState()
                 },
             )
@@ -874,11 +876,15 @@ class MainActivity : Activity() {
             }
 
             PowerButtonState.CONNECTING -> {
-                stopService(Intent(this, BuzzelService::class.java))
+                startService(Intent(this, BuzzelService::class.java).apply {
+                    action = BuzzelService.ACTION_SOFT_DISCONNECT
+                })
             }
 
             PowerButtonState.CONNECTED -> {
-                stopService(Intent(this, BuzzelService::class.java))
+                startService(Intent(this, BuzzelService::class.java).apply {
+                    action = BuzzelService.ACTION_SOFT_DISCONNECT
+                })
             }
 
             PowerButtonState.DISCONNECTED -> {

@@ -292,7 +292,7 @@ class PowerButtonView(
             PowerButtonState.UNPAIRED -> drawFilled(canvas, cx, cy, scale, ZAP_PATH)
             PowerButtonState.CONNECTING -> drawFilledRotated(canvas, cx, cy, scale, LOADING_PATH)
             PowerButtonState.CONNECTED -> drawFilled(canvas, cx, cy, scale, ZAP_PATH)
-            PowerButtonState.DISCONNECTED -> if (ready) drawPlay(canvas, cx, cy, scale) else drawFilled(canvas, cx, cy, scale, UNLINK_PATH)
+            PowerButtonState.DISCONNECTED -> drawFilled(canvas, cx, cy, scale, ZAP_PATH)
         }
     }
 

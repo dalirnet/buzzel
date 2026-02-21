@@ -34,6 +34,8 @@ class BuzzelService : Service() {
         private const val PONG_TIMEOUT_MS = 5_000L
         private const val HANDSHAKE_TIMEOUT_MS = 30_000L
         private const val FAILOVER_DELAY_MS = 10_000L
+        const val ACTION_SOFT_DISCONNECT = "com.buzzel.action.SOFT_DISCONNECT"
+        const val ACTION_UNPAIR = "com.buzzel.action.UNPAIR"
     }
 
     enum class ConnectionState { IDLE, CONNECTING, HANDSHAKING, ACTIVE }
@@ -365,6 +367,10 @@ class BuzzelService : Service() {
                                 TransportManager.ActiveTransport.NONE -> ""
                             }
                         if (connected) {
+                            if (gen != failoverGeneration) {
+                                FileLogger.d(TAG, "Ignoring stale connect (gen=$gen, current=$failoverGeneration)")
+                                return@post
+                            }
                             FileLogger.i(TAG, "$label connected (gen=$gen)")
                             app.connectedTransport = label.ifEmpty { null }
                             app.appendLogEntry(
@@ -426,7 +432,20 @@ class BuzzelService : Service() {
         flags: Int,
         startId: Int,
     ): Int {
-        FileLogger.i(TAG, "onStartCommand (started=$started, state=$state)")
+        val action = intent?.action
+        FileLogger.i(TAG, "onStartCommand action=$action (started=$started, state=$state)")
+
+        when (action) {
+            ACTION_SOFT_DISCONNECT -> {
+                performSoftDisconnect()
+                return START_NOT_STICKY
+            }
+            ACTION_UNPAIR -> {
+                performUnpair()
+                return START_NOT_STICKY
+            }
+        }
+
         if (!started) {
             started = true
             startFailover()
@@ -436,6 +455,40 @@ class BuzzelService : Service() {
             startFailover()
         }
         return START_NOT_STICKY
+    }
+
+    private fun performSoftDisconnect() {
+        FileLogger.i(TAG, "Performing soft disconnect (keep pairing)")
+        val wasActive = state == ConnectionState.ACTIVE || state == ConnectionState.HANDSHAKING
+        transitionTo(ConnectionState.IDLE)
+        handler.removeCallbacks(pingRunnable)
+        cancelHandshakeTimeout()
+        cancelFailover()
+        cancelRetry()
+        if (wasActive) {
+            transport.sendAndStop(Protocol.createGoodbye())
+        } else {
+            transport.stopAll()
+        }
+        stopSelf()
+    }
+
+    private fun performUnpair() {
+        FileLogger.i(TAG, "Performing unpair (clear pairing)")
+        val wasActive = state == ConnectionState.ACTIVE || state == ConnectionState.HANDSHAKING
+        app.hasBeenConnected = false
+        app.configStore.clearPairing()
+        transitionTo(ConnectionState.IDLE)
+        handler.removeCallbacks(pingRunnable)
+        cancelHandshakeTimeout()
+        cancelFailover()
+        cancelRetry()
+        if (wasActive) {
+            transport.sendAndStop(Protocol.createUnpair())
+        } else {
+            transport.stopAll()
+        }
+        stopSelf()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
@@ -450,20 +503,12 @@ class BuzzelService : Service() {
 
     override fun onDestroy() {
         FileLogger.i(TAG, "Service destroyed (state=$state)")
-        val wasActive = state == ConnectionState.ACTIVE || state == ConnectionState.HANDSHAKING
-        app.hasBeenConnected = false
-        app.configStore.clearPairing()
         transitionTo(ConnectionState.IDLE)
         handler.removeCallbacks(pingRunnable)
         cancelHandshakeTimeout()
         cancelFailover()
         cancelRetry()
-        if (wasActive) {
-            FileLogger.d(TAG, "Sending goodbye before teardown")
-            transport.sendAndStop(Protocol.createGoodbye())
-        } else {
-            transport.stopAll()
-        }
+        transport.stopAll()
         super.onDestroy()
     }
 
@@ -499,16 +544,13 @@ class BuzzelService : Service() {
                 app.appendLogEntry(
                     LogEntry(
                         type = LogEventType.DEVICE_DISCONNECTED,
-                        message = "$deviceName said goodbye",
+                        message = "$deviceName disconnected",
                         direction = LogDirection.INCOMING,
                     ),
                 )
-                app.hasBeenConnected = false
-                app.configStore.clearPairing()
                 transitionTo(ConnectionState.IDLE)
-                cancelFailover()
                 transport.stopAll()
-                stopSelf()
+                startFailover()
             }
 
             Signal.UNPAIR -> {
@@ -550,6 +592,7 @@ class BuzzelService : Service() {
                     )
                     transitionTo(ConnectionState.ACTIVE)
                 } else {
+                    app.configStore.clearPairing()
                     app.appendLogEntry(
                         LogEntry(
                             type = LogEventType.PAIRING_FAILED,

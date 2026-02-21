@@ -33,6 +33,12 @@ class OrbitRingsView(
             invalidate()
         }
 
+    var isDeviceConnected: Boolean = true
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     private val rings =
         listOf(
             Ring(
@@ -212,7 +218,8 @@ class OrbitRingsView(
         val pillH = textBounds.height() + padV * 2
         val pillRect = RectF(px - pillW / 2, py - pillH / 2, px + pillW / 2, py + pillH / 2)
 
-        planetBgPaint.color = AppColors.withAlpha(AppColors.green, 38) // ~15%
+        val planetColor = if (isDeviceConnected) AppColors.green else AppColors.red
+        planetBgPaint.color = AppColors.withAlpha(planetColor, 38) // ~15%
         canvas.drawRoundRect(pillRect, pillH / 2, pillH / 2, planetBgPaint)
 
         val textY = py - (planetTextPaint.descent() + planetTextPaint.ascent()) / 2
