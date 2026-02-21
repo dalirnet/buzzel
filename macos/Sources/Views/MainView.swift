@@ -156,27 +156,6 @@ struct MainView: View {
         }
       }
 
-      if store.pairedDevice != nil {
-        Divider()
-          .padding(.vertical, 6)
-
-        Button {
-          showSettings = false
-          transportManager.stop()
-        } label: {
-          Text("Unpair Device")
-            .font(Brand.font(size: 13))
-            .foregroundColor(DesignColor.mutedRed)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { inside in
-          if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
-      }
     }
     .padding(.bottom, 8)
     .frame(width: 180)

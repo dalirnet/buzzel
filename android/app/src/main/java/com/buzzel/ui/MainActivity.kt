@@ -608,17 +608,6 @@ class MainActivity : Activity() {
                 },
             )
         }
-        if (store.pairingCode != null) {
-            items.add(
-                "Unpair Device" to {
-                    startService(Intent(this, BuzzelService::class.java).apply {
-                        action = BuzzelService.ACTION_UNPAIR
-                    })
-                    refreshState()
-                },
-            )
-        }
-
         val builder = android.app.AlertDialog.Builder(this)
         builder.setTitle("Settings")
         builder.setItems(items.map { it.first }.toTypedArray()) { _, which ->
