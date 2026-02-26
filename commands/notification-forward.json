@@ -1,0 +1,11 @@
+{
+    "id": "0x02",
+    "name": "notification-forward",
+    "description": "Forward system notification to other device",
+    "trigger": "connection",
+    "payload": [
+        { "tag": "0x03", "name": "source", "type": "string" },
+        { "tag": "0x04", "name": "title", "type": "string" },
+        { "tag": "0x01", "name": "body", "type": "string" }
+    ]
+}

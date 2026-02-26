@@ -152,11 +152,13 @@ Every frame payload is a **signal**. The first byte identifies it.
 | `0x06`      | ack           | both             | sequence(2)                                        |
 | `0x07`      | goodbye       | both             | —                                                  |
 | `0x08`      | unpair        | both             | —                                                  |
-| `0x09–0xFF` | reserved      | —                | —                                                  |
+| `0x09`      | focus         | both             | —                                                  |
+| `0x0A`      | blur          | both             | —                                                  |
+| `0x0B–0xFF` | reserved      | —                | —                                                  |
 
 ### Payloads
 
-Signals `0x03–0x05`, `0x07–0x08` have **no payload** — just the 1-byte signal ID.
+Signals `0x03–0x05`, `0x07–0x0A` have **no payload** — just the 1-byte signal ID.
 
 **pair.request** — 6 bytes:
 
@@ -189,12 +191,12 @@ Signals `0x03–0x05`, `0x07–0x08` have **no payload** — just the 1-byte sig
 
 Total bytes on wire (frame header + signal byte + payload):
 
-| Signal                                 | Wire bytes            |
-| -------------------------------------- | --------------------- |
-| ping / pong / ready / goodbye / unpair | **3**                 |
-| pair.response / ack                    | **5**                 |
-| pair.request                           | **9**                 |
-| command                                | **6+** (6 + TLV data) |
+| Signal                                                    | Wire bytes            |
+| --------------------------------------------------------- | --------------------- |
+| ping / pong / ready / goodbye / unpair / focus / blur     | **3**                 |
+| pair.response / ack                                       | **5**                 |
+| pair.request                                              | **9**                 |
+| command                                                   | **6+** (6 + TLV data) |
 
 ## Keepalive
 
@@ -215,6 +217,15 @@ Phone                                Computer
 │  ... 5s no pong ...                    │
 │  → idle                                │
 ```
+
+## Visibility
+
+Sent when the app comes to or leaves the foreground. The receiving side uses this to bind or unbind visibility-triggered commands.
+
+- App opens / comes to foreground → send `focus`
+- App closes / goes to background → send `blur`
+
+Only meaningful in `active` state.
 
 ## Pairing
 
@@ -355,15 +366,25 @@ Phone                                              Computer
 
 Not every command needs a response. Some are one-way — ack confirms delivery, no response expected.
 
+## Trigger
+
+Each command declares when it should be bound/unbound:
+
+| Trigger        | Bind on            | Unbind on          |
+| -------------- | ------------------ | ------------------ |
+| `connection`   | session `active`   | session `idle`     |
+| `visibility`   | remote `focus`     | remote `blur`      |
+
 ## Shared Definition
 
-Each command has its own definition file in `assets/commands/`. One file per command, kebab-case name. This is the authoritative spec — both platforms hardcode matching constants in their native code.
+Each command has its own definition file in `commands/`. One file per command, kebab-case name. This is the authoritative spec — both platforms hardcode matching constants in their native code.
 
 ```json
 {
     "id": "0x01",
     "name": "clipboard-sync",
     "description": "Share clipboard text",
+    "trigger": "visibility",
     "payload": [{ "tag": "0x01", "name": "text", "type": "string" }]
 }
 ```
@@ -382,6 +403,7 @@ Abstract base class. Every command subclasses it.
 ```
 class BuzzelCommand {
   var id: UInt8 { 0 }                              // override with command ID
+  var trigger: Trigger { .connection }             // override: .connection or .visibility
   var output: ((UInt8, Data) -> Void)?              // injected on register
 
   func bind() { }                                  // set up system observers
@@ -391,10 +413,11 @@ class BuzzelCommand {
 ```
 
 - **`id`** — command ID, overridden by each subclass
+- **`trigger`** — `connection` or `visibility`. Determines when `bind`/`unbind` are called.
 - **`output`** — closure injected by `CommandHandler` on register. Sends outgoing data to transport layer.
-- **`bind`** — called when connection is active. Set up system observers. When an observer fires, build TLV payload and call `output?(id, payload)`.
-- **`unbind`** — called when connection is dropped. Tear down observers, clean up.
-- **`handle`** — called when an incoming command arrives. Parse fields, execute the action.
+- **`bind`** — set up system observers. When an observer fires, build TLV payload and call `output?(id, payload)`.
+- **`unbind`** — tear down observers, clean up.
+- **`handle`** — process incoming command. Parse fields, execute the action.
 
 ### Outgoing vs Incoming
 
@@ -419,15 +442,15 @@ class CommandHandler {
   func register(_ command: BuzzelCommand)            // store command, inject output
   func dispatch(_ command: Command)                  // decode TLV, call command.handle
 
-  func bindAll()                                     // bind all registered commands
-  func unbindAll()                                   // unbind all registered commands
+  func bindAll(trigger: Trigger)                     // bind commands matching trigger
+  func unbindAll(trigger: Trigger)                   // unbind commands matching trigger
 }
 ```
 
 - **Init** — takes an `output` closure that bridges to transport layer
 - **Register** — stores command by ID and injects `output` closure into it
 - **Dispatch** — finds command by ID, decodes TLV fields, calls `command.handle(fields:)`
-- **Bind/Unbind** — called when connection is active/dropped, propagates to all registered commands
+- **Bind/Unbind** — filters by trigger, propagates to matching commands
 - Unknown command IDs are logged and ignored
 
 ## Command Flow
@@ -459,7 +482,7 @@ System action (e.g. write to clipboard)
 ## File Structure
 
 ```
-assets/commands/
+commands/
   clipboard-sync.json                ← shared definition
 
 macos/Sources/Commands/
@@ -473,7 +496,7 @@ android/.../commands/
 
 ## Adding a Command
 
-1. Create `assets/commands/<name>.json` — assign next command ID, define TLV tags
+1. Create `commands/<name>.json` — assign next command ID, define TLV tags
 2. If the command needs a paired response, assign a separate response command ID
 3. Create `<Name>.swift` — subclass `BuzzelCommand`, implement `bind`/`unbind`/`handle`
 4. Create `<Name>.kt` — subclass `BuzzelCommand`, implement `bind`/`unbind`/`handle`
@@ -484,13 +507,14 @@ android/.../commands/
 
 Both sides can share clipboard text with each other. Triggered automatically when the system clipboard changes.
 
-**Definition** (`assets/commands/clipboard-sync.json`):
+**Definition** (`commands/clipboard-sync.json`):
 
 ```json
 {
     "id": "0x01",
     "name": "clipboard-sync",
     "description": "Share clipboard text",
+    "trigger": "visibility",
     "payload": [{ "tag": "0x01", "name": "text", "type": "string" }]
 }
 ```
@@ -500,10 +524,12 @@ Both sides can share clipboard text with each other. Triggered automatically whe
 ```swift
 class ClipboardSync: BuzzelCommand {
   override var id: UInt8 { 0x01 }
+  override var trigger: Trigger { .visibility }
 
   override func bind() {
     // observe system clipboard changes
-    // when changed → output?(id, tlvEncodeString(tag: 0x01, value: text))
+    // when changed → skip if text == lastWrittenText (echo guard)
+    //              → output?(id, tlvEncodeString(tag: 0x01, value: text))
   }
 
   override func unbind() {
@@ -512,6 +538,7 @@ class ClipboardSync: BuzzelCommand {
 
   override func handle(fields: [TlvField]) {
     // extract text from tag 0x01
+    // lastWrittenText = text (echo guard)
     // write to system clipboard
   }
 }
@@ -547,10 +574,12 @@ Link ────── decode frame → payload
   │
   ▼
 Session ── read signal ID (byte 0)
-        ── 0x01–0x08: handle session signal
+        ── 0x01–0x0A: handle session signal
         ──   ping → pong
         ──   pong → reset timer
         ──   ack → mark delivered
+        ──   focus → bindAll(.visibility)
+        ──   blur → unbindAll(.visibility)
         ──   pair / ready / goodbye / unpair
         ── 0x00: command
         ──   dedup by sequence
@@ -577,12 +606,17 @@ Phone                                                    Computer
   │                                                          │
   │  (both → active)                                         │
   │                                                          │
+  │  [0x09] focus ────────────────────────────────────────►  │
+  │                    ◄── [0x09] focus                       │
+  │                                                          │
   │  [0x04] ping ─────────────────────────────────────────►  │
   │                    ◄── [0x05] pong                        │
   │                                                          │
-  │  [0x00] command.id=0x30 sequence=5 [TLV] ─────────────►  │
-  │                    ◄── [0x06] ack [sequence:5]            │
+  │  [0x00] command.id=0x01 sequence=0 [TLV] ─────────────►  │
+  │                    ◄── [0x06] ack [sequence:0]            │
   │  ✓                                                       │
+  │                                                          │
+  │  [0x0A] blur ─────────────────────────────────────────►  │
   │                                                          │
   │                    ◄── [0x07] goodbye                     │
   │                                                          │
@@ -610,6 +644,6 @@ Phone                                                    Computer
 # Notes
 
 - All integer fields are big-endian
-- Signal IDs `0x09–0xFF` reserved for future use
+- Signal IDs `0x0B–0xFF` reserved for future use
 - Command IDs `0x00–0xFF` reserved until assigned per feature
 - TLV tags are globally unique — not scoped per command
