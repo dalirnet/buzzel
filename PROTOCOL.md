@@ -50,9 +50,9 @@ Frame size is **dynamic** — determined by the transport.
 Derived limits:
 
 ```
-max_payload  = max_frame − 2          (frame header)
-max_cmd_data = max_payload − 4        (signal + cmd + seq)
-max_tlv_val  = max_cmd_data − 2       (tag + len)
+max_payload      = max_frame − 2           (frame header)
+max_command_data = max_payload − 4         (signal + command.id + sequence)
+max_tlv_value    = max_command_data − 2    (tag + length)
 ```
 
 | MTU  | Max frame | Max command data | Max TLV value |
@@ -141,18 +141,18 @@ Every frame payload is a **signal**. The first byte identifies it.
 [SSSSSSSS]  ← 8 bits: signal ID (0–255)
 ```
 
-| ID          | Signal        | Direction        | Payload                    |
-| ----------- | ------------- | ---------------- | -------------------------- |
-| `0x00`      | command       | both             | cmd(1) + seq(2) + TLV(0–N) |
-| `0x01`      | pair.request  | Phone → Computer | code(6)                    |
-| `0x02`      | pair.response | Computer → Phone | accepted(1) + reason(1)    |
-| `0x03`      | ready         | both             | —                          |
-| `0x04`      | ping          | both             | —                          |
-| `0x05`      | pong          | both             | —                          |
-| `0x06`      | ack           | both             | seq(2)                     |
-| `0x07`      | goodbye       | both             | —                          |
-| `0x08`      | unpair        | both             | —                          |
-| `0x09–0xFF` | reserved      | —                | —                          |
+| ID          | Signal        | Direction        | Payload                                            |
+| ----------- | ------------- | ---------------- | -------------------------------------------------- |
+| `0x00`      | command       | both             | command.id(1) + sequence(2) + command.payload(0–N) |
+| `0x01`      | pair.request  | Phone → Computer | code(6)                                            |
+| `0x02`      | pair.response | Computer → Phone | accepted(1) + reason(1)                            |
+| `0x03`      | ready         | both             | —                                                  |
+| `0x04`      | ping          | both             | —                                                  |
+| `0x05`      | pong          | both             | —                                                  |
+| `0x06`      | ack           | both             | sequence(2)                                        |
+| `0x07`      | goodbye       | both             | —                                                  |
+| `0x08`      | unpair        | both             | —                                                  |
+| `0x09–0xFF` | reserved      | —                | —                                                  |
 
 ### Payloads
 
@@ -173,17 +173,17 @@ Signals `0x03–0x05`, `0x07–0x08` have **no payload** — just the 1-byte sig
 
 **ack** — 2 bytes:
 
-| Offset | Field | Size | Description                 |
-| ------ | ----- | ---- | --------------------------- |
-| 0–1    | seq   | 2    | Sequence number being acked |
+| Offset | Field    | Size | Description                 |
+| ------ | -------- | ---- | --------------------------- |
+| 0–1    | sequence | 2    | Sequence number being acked |
 
 **command** — 3 + TLV:
 
-| Offset | Field | Size | Description                  |
-| ------ | ----- | ---- | ---------------------------- |
-| 0      | cmd   | 1    | Command ID                   |
-| 1–2    | seq   | 2    | Per-sender sequence number   |
-| 3+     | data  | 0–N  | TLV pairs (N = max_cmd_data) |
+| Offset | Field           | Size | Description                      |
+| ------ | --------------- | ---- | -------------------------------- |
+| 0      | command.id      | 1    | Command identifier               |
+| 1–2    | sequence        | 2    | Per-sender sequence number       |
+| 3+     | command.payload | 0–N  | TLV pairs (N = max_command_data) |
 
 ### Wire Sizes
 
@@ -205,15 +205,15 @@ Runs only in `active` state.
 - No `pong` within **5s** → `idle`
 
 ```
-Phone                          Computer
-│                              │
-│  [0x04] ping            ──►  │
-│                         ◄──  │  [0x05] pong
-│  ✓                           │
-│                              │
-│  [0x04] ping            ──►  │
-│  ... 10s ...                 │
-│  → idle                      │
+Phone                                Computer
+│                                        │
+│  [0x04] ping ───────────────────────►  │
+│                  ◄── [0x05] pong       │
+│  ✓                                     │
+│                                        │
+│  [0x04] ping ───────────────────────►  │
+│  ... 5s no pong ...                    │
+│  → idle                                │
 ```
 
 ## Pairing
@@ -247,44 +247,44 @@ Both sides derive from `seed`:
 ### Pairing Flow
 
 ```
-Computer                               Phone
- │                                        │
- │  generate seed                         │
- │  derive session ID + code              │
- │  display QR                            │
- │                                        │
- │              ◄──── scan QR ────        │
- │                                        │
- │                    derive ID + code    │
- │                    connect             │
- │                                        │
- │   ◄── pair.request [code] ────────     │
- │                                        │
- │  validate code                         │
- │                                        │
- │   ──── pair.response [ok] ────────►    │
- │                                        │
- │  both → active                         │
+Computer                                          Phone
+ │                                                    │
+ │  generate seed                                     │
+ │  derive session ID + code                          │
+ │  display QR                                        │
+ │                                                    │
+ │                    ◄──── scan QR ────              │
+ │                                                    │
+ │                          derive ID + code          │
+ │                          connect                   │
+ │                                                    │
+ │              ◄── pair.request [code] ───────────   │
+ │                                                    │
+ │  validate code                                     │
+ │                                                    │
+ │  pair.response [ok] ───────────────────────────►   │
+ │                                                    │
+ │  both → active                                     │
 ```
 
 ### Reconnection
 
-Already-paired devices skip pairing. Both sides send `ready` on `link.up` — no ordering, no waiting. First `ready` received → `active`. Seq numbers are **not** reset.
+Already-paired devices skip pairing. Both sides send `ready` on `link.up` — no ordering, no waiting. First `ready` received → `active`. Sequence numbers are **not** reset.
 
 ```
-Computer                               Phone
- │                                        │
- │              ◄──── link.up ────        │
- │                                        │
- │   ──── ready ──────────────────────►   │
- │   ◄──── ready ─────────────────────    │
- │                                        │
- │  both → active                         │
+Computer                                          Phone
+ │                                                    │
+ │                    ◄──── link.up ────              │
+ │                                                    │
+ │  ready ────────────────────────────────────────►   │
+ │                    ◄──── ready ─────────────────   │
+ │                                                    │
+ │  both → active                                     │
 ```
 
 ### Failover During Active
 
-If the link drops while `active`, session goes to `idle` and failover restarts. On reconnect, both sides exchange `ready`. Seq numbers continue from where they left off.
+If the link drops while `active`, session goes to `idle` and failover restarts. On reconnect, both sides exchange `ready`. Sequence numbers continue from where they left off.
 
 ---
 
@@ -292,27 +292,32 @@ If the link drops while `active`, session goes to `idle` and failover restarts. 
 
 > High-level commands carried as signal `0x00`.
 
+Commands are not triggered by the user. They run automatically in response to system events (clipboard change, SMS received, battery update, etc.).
+
 ## Structure
 
 ```
-Frame:   [size 2B][0x00][cmd 1B][seq 2B][TLV data 0–NB]
-          frame    sig   ──── command payload ────────────
+Frame: [size 2B][0x00][command.id 1B][sequence 2B][command.payload 0–NB]
+        frame    signal ─────────────────── command ───────────────────
 ```
 
-- **cmd** — Command ID (`0x00–0xFF`, all reserved until assigned)
-- **seq** — Per-sender sequence number, starts at 0, wraps at 65535
+- **command.id** — command identifier (`0x00–0xFF`, all reserved until assigned)
+- **command.payload** — zero or more TLV fields
+- **sequence** — per-sender sequence number, starts at 0, wraps at 65535
+
+The command layer only deals with **command.id** and **command.payload**. Sequence numbers, ACK, and retry are transparent.
 
 ## TLV Data
 
 ```
-[Tag 1B][Len 1B][Value 0–NB]  ...repeated
+[Tag 1B][Length 1B][Value 0–NB]  ...repeated
 ```
 
 - **Tag** — Field identifier from a global registry (1 byte)
-- **Len** — Value size in bytes (1 byte, max 255)
+- **Length** — Value size in bytes (1 byte, max 255)
 - **Value** — Raw bytes (UTF-8 for strings, big-endian for integers)
 
-Single TLV value max is **255 bytes** (1-byte Len field). A command can carry multiple TLV pairs — total command data is limited by the transport, not by a single entry.
+Single TLV value max is **255 bytes** (1-byte Length field). A command can carry multiple TLV pairs — total command data is limited by the transport, not by a single entry.
 
 Same tag means the same thing across all commands.
 
@@ -321,53 +326,196 @@ Same tag means the same thing across all commands.
 Every command gets an `ack`.
 
 ```
-Sender                              Receiver
-  │                                    │
-  │  [0x00] cmd seq=4 ──────────►      │
-  │                  ◄── [0x06] ack 4  │
-  │  ✓                                 │
+Sender                                            Receiver
+  │                                                    │
+  │  [0x00] command.id=0x01 sequence=4 ─────────────►  │
+  │                          ◄── [0x06] ack 4          │
+  │  ✓                                                 │
 ```
 
-- **Retry**: 5s timeout → resend same `seq` → 3 failures → `idle`
-- **Dedup**: Receiver tracks last `seq`. Same `seq` → skip, re-ack
+- **Retry**: 5s timeout → resend same `sequence` → 3 failures → `idle`
+- **Dedup**: Receiver tracks last `sequence`. Same `sequence` → skip, re-ack
 
 ## Request / Response
 
 Some commands come in pairs:
 
 ```
-Phone                            Computer
-│                                │
-│  cmd=0x30 seq=5 ──────────►    │
-│              ◄── ack [seq:5]   │  delivery confirmed
-│                                │
-│                                │  process...
-│                                │
-│              ◄── cmd=0x31 seq=8│  response
-│  ack [seq:8] ──────────►       │
-│                                │
+Phone                                              Computer
+│                                                      │
+│  command.id=0x30 sequence=5 ──────────────────────►  │
+│                        ◄── ack [sequence:5]          │  delivery confirmed
+│                                                      │
+│                                                      │  process...
+│                                                      │
+│              ◄── command.id=0x31 sequence=8          │  response
+│  ack [sequence:8] ────────────────────────────────►  │
+│                                                      │
 ```
 
 Not every command needs a response. Some are one-way — ack confirms delivery, no response expected.
 
-## Command IDs
+## Shared Definition
 
-All `0x00–0xFF` reserved. Assigned per feature as implemented.
+Each command has its own definition file in `assets/commands/`. One file per command, kebab-case name. This is the authoritative spec — both platforms hardcode matching constants in their native code.
 
-## TLV Tag Registry
+```json
+{
+    "id": "0x01",
+    "name": "clipboard-sync",
+    "description": "Share clipboard text",
+    "payload": [{ "tag": "0x01", "name": "text", "type": "string" }]
+}
+```
 
-Tags are globally unique across all commands. Range `0x00–0xFF`.
+**Rules:**
 
-| Tag | Name | Type | Description                         |
-| --- | ---- | ---- | ----------------------------------- |
-| —   | —    | —    | Assigned per feature as implemented |
+- Command IDs: sequential (`0x01`, `0x02`, …), range `0x00–0xFF`
+- TLV tags: globally unique across all commands, range `0x00–0xFF`
+- Reuse tags when the meaning matches across commands
+- No direction — each platform decides which side it plays
+
+## BuzzelCommand
+
+Abstract base class. Every command subclasses it.
+
+```
+class BuzzelCommand {
+  var id: UInt8 { 0 }                              // override with command ID
+  var output: ((UInt8, Data) -> Void)?              // injected on register
+
+  func bind() { }                                  // set up system observers
+  func unbind() { }                                // tear down system observers
+  func handle(fields: [TlvField]) { }             // process incoming command
+}
+```
+
+- **`id`** — command ID, overridden by each subclass
+- **`output`** — closure injected by `CommandHandler` on register. Sends outgoing data to transport layer.
+- **`bind`** — called when connection is active. Set up system observers. When an observer fires, build TLV payload and call `output?(id, payload)`.
+- **`unbind`** — called when connection is dropped. Tear down observers, clean up.
+- **`handle`** — called when an incoming command arrives. Parse fields, execute the action.
+
+### Outgoing vs Incoming
+
+| Direction | Method            | Trigger          | What it does                                             |
+| --------- | ----------------- | ---------------- | -------------------------------------------------------- |
+| Outgoing  | `bind()`          | System event     | Set up observer → build payload → `output?(id, payload)` |
+| Incoming  | `handle(fields:)` | Received command | Parse fields → execute system action                     |
+
+A platform implements `bind` (outgoing), `handle` (incoming), or both.
+
+## CommandHandler
+
+Registry and dispatcher, decoupled from transport layer via closure.
+
+```
+class CommandHandler {
+  private var commands: [UInt8: BuzzelCommand]
+  private let output: (UInt8, Data) -> Void
+
+  init(output: (UInt8, Data) -> Void)
+
+  func register(_ command: BuzzelCommand)            // store command, inject output
+  func dispatch(_ command: Command)                  // decode TLV, call command.handle
+
+  func bindAll()                                     // bind all registered commands
+  func unbindAll()                                   // unbind all registered commands
+}
+```
+
+- **Init** — takes an `output` closure that bridges to transport layer
+- **Register** — stores command by ID and injects `output` closure into it
+- **Dispatch** — finds command by ID, decodes TLV fields, calls `command.handle(fields:)`
+- **Bind/Unbind** — called when connection is active/dropped, propagates to all registered commands
+- Unknown command IDs are logged and ignored
+
+## Command Flow
+
+```
+System event (e.g. clipboard change)
+  │
+  ▼
+bind() observer fires
+  │ build TLV payload
+  ▼
+output?(id, payload)
+  │
+  ▼
+transport layer (session → link → wire)
+  │
+  ═══ wire ═══
+  │
+  ▼
+CommandHandler.dispatch(command)
+  │ decode TLV fields
+  ▼
+command.handle(fields:)
+  │ execute action
+  ▼
+System action (e.g. write to clipboard)
+```
+
+## File Structure
+
+```
+assets/commands/
+  clipboard-sync.json                ← shared definition
+
+macos/Sources/Commands/
+  CommandHandler.swift               ← BuzzelCommand base + dispatcher
+  ClipboardSync.swift                ← 0x01
+
+android/.../commands/
+  CommandHandler.kt                  ← BuzzelCommand base + dispatcher
+  ClipboardSync.kt                   ← 0x01
+```
 
 ## Adding a Command
 
-1. Assign next available command ID
-2. Define TLV tags from the global registry
-3. If it needs a response, assign a paired response ID
-4. Reliable delivery is automatic
+1. Create `assets/commands/<name>.json` — assign next command ID, define TLV tags
+2. If the command needs a paired response, assign a separate response command ID
+3. Create `<Name>.swift` — subclass `BuzzelCommand`, implement `bind`/`unbind`/`handle`
+4. Create `<Name>.kt` — subclass `BuzzelCommand`, implement `bind`/`unbind`/`handle`
+5. Register in `CommandHandler` on both platforms
+6. Add protocol tests for payload round-trip
+
+## clipboard-sync (`0x01`)
+
+Both sides can share clipboard text with each other. Triggered automatically when the system clipboard changes.
+
+**Definition** (`assets/commands/clipboard-sync.json`):
+
+```json
+{
+    "id": "0x01",
+    "name": "clipboard-sync",
+    "description": "Share clipboard text",
+    "payload": [{ "tag": "0x01", "name": "text", "type": "string" }]
+}
+```
+
+**Sample** (`ClipboardSync`):
+
+```swift
+class ClipboardSync: BuzzelCommand {
+  override var id: UInt8 { 0x01 }
+
+  override func bind() {
+    // observe system clipboard changes
+    // when changed → output?(id, tlvEncodeString(tag: 0x01, value: text))
+  }
+
+  override func unbind() {
+    // stop observing
+  }
+
+  override func handle(fields: [TlvField]) {
+    // extract text from tag 0x01
+    // write to system clipboard
+  }
+}
+```
 
 ---
 
@@ -379,10 +527,10 @@ Tags are globally unique across all commands. Range `0x00–0xFF`.
 App Logic
   │
   ▼
-Command ── build [0x00][cmd][seq][TLV]
+Command ── build [0x00][command.id][sequence][command.payload]
   │
   ▼
-Session ── track seq, start retry timer
+Session ── track sequence, start retry timer
   │
   ▼
 Link ────── frame [size][payload] → BLE / TCP
@@ -399,17 +547,17 @@ Link ────── decode frame → payload
   │
   ▼
 Session ── read signal ID (byte 0)
-        ── 0x01–0xFF: handle session signal
+        ── 0x01–0x08: handle session signal
         ──   ping → pong
         ──   pong → reset timer
         ──   ack → mark delivered
         ──   pair / ready / goodbye / unpair
         ── 0x00: command
-        ──   dedup by seq
+        ──   dedup by sequence
         ──   send ack, pass to Command
   │
   ▼
-Command ── dispatch by cmd ID → App Logic
+Command ── dispatch by command.id → App Logic
 ```
 
 ---
@@ -417,28 +565,28 @@ Command ── dispatch by cmd ID → App Logic
 # Example — Full Session
 
 ```
-Phone                                                Computer
-  │                                                    │
-  │  (scan QR, derive code)                            │
-  │                                                    │
-  │  ── link.up ──────────────────────────────────►    │
-  │                                                    │
-  │  [0x01] pair.request [code]                  ──►   │
-  │                                                    │  validate
-  │                                              ◄──   │  [0x02] pair.response [ok]
-  │                                                    │
-  │  (both → active)                                   │
-  │                                                    │
-  │  [0x04] ping                                 ──►   │
-  │                                              ◄──   │  [0x05] pong
-  │                                                    │
-  │  [0x00] cmd=0x30 seq=5 [TLV]                 ──►   │
-  │                                              ◄──   │  [0x06] ack [seq:5]
-  │  ✓                                                 │
-  │                                                    │
-  │                                              ◄──   │  [0x07] goodbye
-  │                                                    │
-  │  (→ idle)                                          │
+Phone                                                    Computer
+  │                                                          │
+  │  (scan QR, derive code)                                  │
+  │                                                          │
+  │  ── link.up ──────────────────────────────────────────►  │
+  │                                                          │
+  │  [0x01] pair.request [code] ──────────────────────────►  │
+  │                                                          │  validate
+  │                    ◄── [0x02] pair.response [ok]          │
+  │                                                          │
+  │  (both → active)                                         │
+  │                                                          │
+  │  [0x04] ping ─────────────────────────────────────────►  │
+  │                    ◄── [0x05] pong                        │
+  │                                                          │
+  │  [0x00] command.id=0x30 sequence=5 [TLV] ─────────────►  │
+  │                    ◄── [0x06] ack [sequence:5]            │
+  │  ✓                                                       │
+  │                                                          │
+  │                    ◄── [0x07] goodbye                     │
+  │                                                          │
+  │  (→ idle)                                                │
 ```
 
 ---
