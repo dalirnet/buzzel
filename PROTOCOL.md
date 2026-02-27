@@ -51,7 +51,7 @@ Derived limits:
 
 ```
 max_payload      = max_frame − 2           (frame header)
-max_command_data = max_payload − 4         (signal + command.id + sequence)
+max_command_data = max_payload − 4         (signal + sequence + command.id)
 max_tlv_value    = max_command_data − 2    (tag + length)
 ```
 
@@ -143,7 +143,7 @@ Every frame payload is a **signal**. The first byte identifies it.
 
 | ID          | Signal        | Direction        | Payload                                            |
 | ----------- | ------------- | ---------------- | -------------------------------------------------- |
-| `0x00`      | command       | both             | command.id(1) + sequence(2) + command.payload(0–N) |
+| `0x00`      | command       | both             | sequence(2) + command.id(1) + command.payload(0–N) |
 | `0x01`      | pair.request  | Phone → Computer | code(6)                                            |
 | `0x02`      | pair.response | Computer → Phone | accepted(1) + reason(1)                            |
 | `0x03`      | ready         | both             | —                                                  |
@@ -183,20 +183,20 @@ Signals `0x03–0x05`, `0x07–0x0A` have **no payload** — just the 1-byte sig
 
 | Offset | Field           | Size | Description                      |
 | ------ | --------------- | ---- | -------------------------------- |
-| 0      | command.id      | 1    | Command identifier               |
-| 1–2    | sequence        | 2    | Per-sender sequence number       |
+| 0–1    | sequence        | 2    | Per-sender sequence number       |
+| 2      | command.id      | 1    | Command identifier               |
 | 3+     | command.payload | 0–N  | TLV pairs (N = max_command_data) |
 
 ### Wire Sizes
 
 Total bytes on wire (frame header + signal byte + payload):
 
-| Signal                                                    | Wire bytes            |
-| --------------------------------------------------------- | --------------------- |
-| ping / pong / ready / goodbye / unpair / focus / blur     | **3**                 |
-| pair.response / ack                                       | **5**                 |
-| pair.request                                              | **9**                 |
-| command                                                   | **6+** (6 + TLV data) |
+| Signal                                                | Wire bytes            |
+| ----------------------------------------------------- | --------------------- |
+| ping / pong / ready / goodbye / unpair / focus / blur | **3**                 |
+| pair.response / ack                                   | **5**                 |
+| pair.request                                          | **9**                 |
+| command                                               | **6+** (6 + TLV data) |
 
 ## Keepalive
 
@@ -308,8 +308,8 @@ Commands are not triggered by the user. They run automatically in response to sy
 ## Structure
 
 ```
-Frame: [size 2B][0x00][command.id 1B][sequence 2B][command.payload 0–NB]
-        frame    signal ─────────────────── command ───────────────────
+Frame: [size 2B][0x00][sequence 2B][command.id 1B][command.payload 0–NB]
+        frame    signal  session   ─────────── command ───────────────
 ```
 
 - **command.id** — command identifier (`0x00–0xFF`, all reserved until assigned)
@@ -339,7 +339,7 @@ Every command gets an `ack`.
 ```
 Sender                                            Receiver
   │                                                    │
-  │  [0x00] command.id=0x01 sequence=4 ─────────────►  │
+  │  [0x00] sequence=4 command.id=0x01 ─────────────►  │
   │                          ◄── [0x06] ack 4          │
   │  ✓                                                 │
 ```
@@ -354,12 +354,12 @@ Some commands come in pairs:
 ```
 Phone                                              Computer
 │                                                      │
-│  command.id=0x30 sequence=5 ──────────────────────►  │
+│  sequence=5 command.id=0x30 ──────────────────────►  │
 │                        ◄── ack [sequence:5]          │  delivery confirmed
 │                                                      │
 │                                                      │  process...
 │                                                      │
-│              ◄── command.id=0x31 sequence=8          │  response
+│              ◄── sequence=8 command.id=0x31          │  response
 │  ack [sequence:8] ────────────────────────────────►  │
 │                                                      │
 ```
@@ -370,10 +370,10 @@ Not every command needs a response. Some are one-way — ack confirms delivery, 
 
 Each command declares when it should be bound/unbound:
 
-| Trigger        | Bind on            | Unbind on          |
-| -------------- | ------------------ | ------------------ |
-| `connection`   | session `active`   | session `idle`     |
-| `visibility`   | remote `focus`     | remote `blur`      |
+| Trigger      | Bind on          | Unbind on      |
+| ------------ | ---------------- | -------------- |
+| `connection` | session `active` | session `idle` |
+| `visibility` | remote `focus`   | remote `blur`  |
 
 ## Shared Definition
 
@@ -554,7 +554,7 @@ class ClipboardSync: BuzzelCommand {
 App Logic
   │
   ▼
-Command ── build [0x00][command.id][sequence][command.payload]
+Command ── build [0x00][sequence][command.id][command.payload]
   │
   ▼
 Session ── track sequence, start retry timer
@@ -612,7 +612,7 @@ Phone                                                    Computer
   │  [0x04] ping ─────────────────────────────────────────►  │
   │                    ◄── [0x05] pong                        │
   │                                                          │
-  │  [0x00] command.id=0x01 sequence=0 [TLV] ─────────────►  │
+  │  [0x00] sequence=0 command.id=0x01 [TLV] ─────────────►  │
   │                    ◄── [0x06] ack [sequence:0]            │
   │  ✓                                                       │
   │                                                          │
