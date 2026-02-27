@@ -8,15 +8,19 @@ struct OrbitRingsView<Content: View>: View {
     var isRemoteFocused: Bool = false
     @ViewBuilder let content: () -> Content
 
-    @State private var startDate = Date.now
+    @State private var startDate: Date?
     @State private var isWindowFocused = true
     @State private var pausedElapsed: TimeInterval = 0
+    @State private var opacity: Double = 0
 
     var body: some View {
         TimelineView(.animation) { timeline in
-            let elapsed =
-                isWindowFocused
-                ? timeline.date.timeIntervalSince(startDate) : pausedElapsed
+            let elapsed: TimeInterval =
+                if let startDate, isWindowFocused {
+                    max(0, timeline.date.timeIntervalSince(startDate))
+                } else {
+                    pausedElapsed
+                }
             ZStack {
                 ForEach(Array(Self.rings.enumerated()), id: \.offset) { _, ring in
                     ringView(ring: ring, elapsed: elapsed)
@@ -30,16 +34,26 @@ struct OrbitRingsView<Content: View>: View {
             }
         }
         .frame(width: 294, height: 294)
+        .opacity(opacity)
+        .onAppear {
+            withAnimation(.easeIn(duration: 0.8)) {
+                opacity = 1
+            }
+            startDate = Date.now.addingTimeInterval(1.0)
+        }
         .onReceive(
             NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
         ) { _ in
+            guard !isWindowFocused else { return }
             startDate = Date.now.addingTimeInterval(-pausedElapsed)
             isWindowFocused = true
         }
         .onReceive(
             NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
         ) { _ in
-            pausedElapsed = Date.now.timeIntervalSince(startDate)
+            if let startDate {
+                pausedElapsed = max(0, Date.now.timeIntervalSince(startDate))
+            }
             isWindowFocused = false
         }
     }

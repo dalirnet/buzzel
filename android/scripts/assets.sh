@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Generate Android app icons, splash assets, and brand.json from source SVGs.
+# Generate Android app icons, brand.json, and notification icon from source SVGs.
 #
 # Usage:  sh assets.sh
 # Requires: rsvg-convert, magick (ImageMagick 7)
@@ -9,7 +9,6 @@
 # Output:
 #   app/src/main/assets/brand.json              — runtime brand config
 #   app/src/main/assets/sofia-sans.ttf          — custom font
-#   app/src/main/res/drawable/mesh.png           — splash background
 #   app/src/main/res/mipmap-*/ic_launcher*.png  — app icons (legacy + adaptive)
 #   app/src/main/res/drawable-*/ic_notification.png — notification icon
 
@@ -64,13 +63,12 @@ cat > "$OUT/brand.json" <<EOF
 }
 EOF
 
-# --- 3. Render mesh gradient ---
+# --- 3. Render mesh gradient for icon ---
 
 echo "Rendering mesh gradient..."
 rsvg-convert -w 1080 -h 1920 "$MESH" -o "$TMP/mesh.png"
-cp "$TMP/mesh.png" "$RES/drawable/mesh.png"
 
-# --- 4. Recolored logo SVG ---
+# --- 4. Logo mask SVG (white for alpha mask) ---
 
 PVB=$((VB + PADDING * 2))
 sed \
@@ -105,7 +103,8 @@ XML
 
 for pair in mdpi:108 hdpi:162 xhdpi:216 xxhdpi:324 xxxhdpi:432; do
     d="${pair%%:*}"; s="${pair##*:}"
-    magick "$TMP/mesh.png" -resize "${s}x${s}!" "$RES/mipmap-$d/ic_launcher_background.png"
+    magick "$TMP/mesh.png" -resize "${s}x${s}!" \
+        -define png:color-type=2 "$RES/mipmap-$d/ic_launcher_background.png"
     rsvg-convert -w "$s" -h "$s" "$TMP/logo.svg" -o "$RES/mipmap-$d/ic_launcher_foreground.png"
 done
 
@@ -113,9 +112,11 @@ done
 
 for pair in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
     d="${pair%%:*}"; s="${pair##*:}"
-    magick "$TMP/mesh.png" -resize "${s}x${s}!" "$TMP/bg.png"
-    rsvg-convert -w "$s" -h "$s" "$TMP/logo.svg" -o "$TMP/fg.png"
-    magick "$TMP/bg.png" "$TMP/fg.png" -composite "$RES/mipmap-$d/ic_launcher.png"
+    rsvg-convert -w "$s" -h "$s" "$TMP/logo.svg" -o "$TMP/mask.png"
+    magick \
+        \( "$TMP/mesh.png" -resize "${s}x${s}!" \) \
+        \( -size "${s}x${s}" "xc:#1a1a1a" "$TMP/mask.png" -compose CopyOpacity -composite \) \
+        -compose Over -composite -define png:color-type=2 "$RES/mipmap-$d/ic_launcher.png"
 done
 
 # --- 7. Notification icon ---

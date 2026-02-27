@@ -9,10 +9,6 @@ enum Brand {
 
     static let fontName = "SofiaSans-Regular"
 
-    static let splashLogoScale: CGFloat = 0.35
-    static let splashLogoColorLight = Color.white
-    static let splashLogoColorDark = Color(red: 0.1, green: 0.1, blue: 0.1)
-
     private static var loaded = false
 
     static func load() {

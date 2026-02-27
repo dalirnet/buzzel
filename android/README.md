@@ -13,7 +13,7 @@ app/src/main/java/com/buzzel/
 │   ├── PowerButtonView.kt       # Connection button with state icons
 │   ├── OrbitRingsView.kt        # Animated orbit rings around button
 │   ├── SVGIconView.kt           # SVG path icon renderer
-│   ├── WaveBLogoView.kt         # App logo (wave-b path)
+│   ├── BuzzelLogoView.kt        # App logo (buzzel-b path)
 │   ├── AppColors.kt             # Adaptive color system (light/dark)
 │   ├── PowerButtonState.kt      # Connection state enum
 │   └── LayoutHelpers.kt         # dp conversion, layout param helpers

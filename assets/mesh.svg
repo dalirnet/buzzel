@@ -16,9 +16,9 @@
             gradientUnits="userSpaceOnUse"
             gradientTransform="translate(-150 -100)"
         >
-      <stop offset="0%" stop-color="#00A86B" stop-opacity="0.9" />
-      <stop offset="40%" stop-color="#00A86B" stop-opacity="0.6" />
-      <stop offset="100%" stop-color="#00A86B" stop-opacity="0" />
+      <stop offset="0%" stop-color="#808080" stop-opacity="0.9" />
+      <stop offset="40%" stop-color="#808080" stop-opacity="0.6" />
+      <stop offset="100%" stop-color="#808080" stop-opacity="0" />
     </radialGradient>
     <radialGradient
             id="g1"
@@ -28,9 +28,9 @@
             gradientUnits="userSpaceOnUse"
             gradientTransform="translate(1200 100)"
         >
-      <stop offset="0%" stop-color="#0099DD" stop-opacity="0.85" />
-      <stop offset="40%" stop-color="#0099DD" stop-opacity="0.5" />
-      <stop offset="100%" stop-color="#0099DD" stop-opacity="0" />
+      <stop offset="0%" stop-color="#7D7D7D" stop-opacity="0.85" />
+      <stop offset="40%" stop-color="#7D7D7D" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#7D7D7D" stop-opacity="0" />
     </radialGradient>
     <radialGradient
             id="g2"
@@ -40,9 +40,9 @@
             gradientUnits="userSpaceOnUse"
             gradientTransform="translate(1150 2000)"
         >
-      <stop offset="0%" stop-color="#FFB800" stop-opacity="0.85" />
-      <stop offset="40%" stop-color="#FFB800" stop-opacity="0.5" />
-      <stop offset="100%" stop-color="#FFB800" stop-opacity="0" />
+      <stop offset="0%" stop-color="#BABABA" stop-opacity="0.85" />
+      <stop offset="40%" stop-color="#BABABA" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#BABABA" stop-opacity="0" />
     </radialGradient>
     <radialGradient
             id="g3"
@@ -52,9 +52,9 @@
             gradientUnits="userSpaceOnUse"
             gradientTransform="translate(-50 1950)"
         >
-      <stop offset="0%" stop-color="#FF9500" stop-opacity="0.8" />
-      <stop offset="40%" stop-color="#FF9500" stop-opacity="0.5" />
-      <stop offset="100%" stop-color="#FF9500" stop-opacity="0" />
+      <stop offset="0%" stop-color="#A1A1A1" stop-opacity="0.8" />
+      <stop offset="40%" stop-color="#A1A1A1" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#A1A1A1" stop-opacity="0" />
     </radialGradient>
     <radialGradient
             id="g4"
@@ -64,9 +64,9 @@
             gradientUnits="userSpaceOnUse"
             gradientTransform="translate(540 600)"
         >
-      <stop offset="0%" stop-color="#00C9A7" stop-opacity="0.7" />
-      <stop offset="40%" stop-color="#00C9A7" stop-opacity="0.4" />
-      <stop offset="100%" stop-color="#00C9A7" stop-opacity="0" />
+      <stop offset="0%" stop-color="#9C9C9C" stop-opacity="0.7" />
+      <stop offset="40%" stop-color="#9C9C9C" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#9C9C9C" stop-opacity="0" />
     </radialGradient>
     <radialGradient
             id="g5"
@@ -76,9 +76,9 @@
             gradientUnits="userSpaceOnUse"
             gradientTransform="translate(300 1100)"
         >
-      <stop offset="0%" stop-color="#0099DD" stop-opacity="0.65" />
-      <stop offset="40%" stop-color="#0099DD" stop-opacity="0.35" />
-      <stop offset="100%" stop-color="#0099DD" stop-opacity="0" />
+      <stop offset="0%" stop-color="#7D7D7D" stop-opacity="0.65" />
+      <stop offset="40%" stop-color="#7D7D7D" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#7D7D7D" stop-opacity="0" />
     </radialGradient>
     <radialGradient
             id="g6"
@@ -88,9 +88,9 @@
             gradientUnits="userSpaceOnUse"
             gradientTransform="translate(800 1300)"
         >
-      <stop offset="0%" stop-color="#FFCC00" stop-opacity="0.7" />
-      <stop offset="40%" stop-color="#FFCC00" stop-opacity="0.4" />
-      <stop offset="100%" stop-color="#FFCC00" stop-opacity="0" />
+      <stop offset="0%" stop-color="#C8C8C8" stop-opacity="0.7" />
+      <stop offset="40%" stop-color="#C8C8C8" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#C8C8C8" stop-opacity="0" />
     </radialGradient>
     <radialGradient
             id="g7"
@@ -100,9 +100,9 @@
             gradientUnits="userSpaceOnUse"
             gradientTransform="translate(200 400)"
         >
-      <stop offset="0%" stop-color="#007B9E" stop-opacity="0.6" />
-      <stop offset="40%" stop-color="#007B9E" stop-opacity="0.3" />
-      <stop offset="100%" stop-color="#007B9E" stop-opacity="0" />
+      <stop offset="0%" stop-color="#636363" stop-opacity="0.6" />
+      <stop offset="40%" stop-color="#636363" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#636363" stop-opacity="0" />
     </radialGradient>
     <radialGradient
             id="g8"
@@ -112,12 +112,12 @@
             gradientUnits="userSpaceOnUse"
             gradientTransform="translate(750 850)"
         >
-      <stop offset="0%" stop-color="#00A86B" stop-opacity="0.55" />
-      <stop offset="40%" stop-color="#00A86B" stop-opacity="0.25" />
-      <stop offset="100%" stop-color="#00A86B" stop-opacity="0" />
+      <stop offset="0%" stop-color="#808080" stop-opacity="0.55" />
+      <stop offset="40%" stop-color="#808080" stop-opacity="0.25" />
+      <stop offset="100%" stop-color="#808080" stop-opacity="0" />
     </radialGradient>
   </defs>
-  <rect width="1080" height="1920" fill="#007B6E" />
+  <rect width="1080" height="1920" fill="#606060" />
   <rect width="1080" height="1920" fill="url(#g0)" filter="url(#blur)" />
   <rect width="1080" height="1920" fill="url(#g1)" filter="url(#blur)" />
   <rect width="1080" height="1920" fill="url(#g2)" filter="url(#blur)" />

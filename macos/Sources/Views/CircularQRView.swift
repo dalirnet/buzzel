@@ -73,7 +73,7 @@ struct CircularQRCodeView: View {
                 .frame(width: size, height: size)
                 .clipShape(Circle())
 
-                WaveBLogoView(size: logoSize)
+                BuzzelLogoView(size: logoSize)
             }
             .frame(width: size, height: size)
         }

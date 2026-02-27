@@ -25,7 +25,7 @@ test:
 .PHONY: run
 run: build
 	adb install -r -t $$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
-	adb shell am start -n com.buzzel/.ui.SplashActivity
+	adb shell am start -n com.buzzel/.ui.MainActivity
 
 .PHONY: dist
 dist: release

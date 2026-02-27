@@ -8,7 +8,7 @@ import android.view.View
 import androidx.core.graphics.PathParser
 import kotlin.math.min
 
-class WaveBLogoView(
+class BuzzelLogoView(
     context: Context,
     private var logoColor: Int = AppColors.text,
 ) : View(context) {

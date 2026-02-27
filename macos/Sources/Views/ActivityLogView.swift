@@ -8,7 +8,7 @@ struct ActivityLogView: View {
         if transportManager.logEntries.isEmpty {
             VStack(spacing: 12) {
                 Spacer()
-                WaveBLogoView(size: 32, color: DesignColor.secondary.opacity(0.3))
+                BuzzelLogoView(size: 32, color: DesignColor.secondary.opacity(0.3))
                 Text("No activity yet")
                     .font(Brand.font(size: 14))
                     .foregroundColor(DesignColor.secondary)

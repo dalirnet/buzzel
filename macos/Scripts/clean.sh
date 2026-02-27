@@ -61,7 +61,7 @@ find "${HOME}/Library/Caches" -name "com.apple.iconservices*" -exec rm -rf {} + 
 # --- 7. Generated resources ---
 
 echo "Cleaning generated resources..."
-remove Resources/AppIcon.icns Resources/Brand.json Resources/Mesh.png Resources/SofiaSans.ttf
+remove Resources/AppIcon.icns Resources/Brand.json Resources/SofiaSans.ttf
 
 echo ""
 if [ "$removed" -gt 0 ]; then

@@ -27,6 +27,7 @@ Resolved from platform system colors. macOS uses native color tokens directly. A
 | `accent`    | `colorAccent`                  | `.controlAccentColor`    | QR icon, orbit dots    |
 | `green`     | system green                   | `.systemGreen`           | Success, orbit dots    |
 | `orange`    | system orange                  | `.systemOrange`          | Connecting, orbit dots |
+| `yellow`    | system yellow                  | `.systemYellow`          | Device planet idle     |
 | `red`       | system red                     | `.systemRed`             | Error, disconnected    |
 | `gray`      | system gray                    | `.systemGray`            | Unpaired               |
 | `onButton`  | white                          | `.white`                 | Icon on power button   |
@@ -114,54 +115,9 @@ Base unit: **4**.
 | Content switch | 250ms    | easeIn then spring        | Scale to 0, swap at 120ms, spring back to 1.0       |
 | Typewriter     | 35ms/ch  |                           | Delete chars then type new chars                    |
 | Status flip    | 250ms    | easeInOut then spring     | 3D rotation on X-axis                               |
-| Orbit rotation | 12–25s   | linear                    | Continuous, synced to display refresh               |
+| Orbit fade-in  | 800ms    | easeIn                    | Opacity 0→1 on appear                               |
+| Orbit rotation | 12–25s   | linear                    | Starts after 1s delay, synced to display refresh    |
 | Menu bar blink | 1000ms   | toggle                    | macOS only                                          |
-
----
-
-## Splash Screen
-
-Mesh gradient background with Z-draw logo animation on both platforms.
-
-### Background
-
-macOS-style mesh gradient with 9 overlapping radial gradients and heavy blur (120px) for organic color blending. Rendered to PNG by `assets.sh`.
-
-| Position     | Color     | Radius | Opacity | Notes       |
-| ------------ | --------- | ------ | ------- | ----------- |
-| Top-left     | `#00A86B` | 1200   | 0.9     | Green       |
-| Top-right    | `#0099DD` | 1100   | 0.85    | Blue        |
-| Bottom-right | `#FFB800` | 1400   | 0.85    | Yellow/Gold |
-| Bottom-left  | `#FF9500` | 1300   | 0.8     | Orange      |
-| Center-top   | `#00C9A7` | 950    | 0.7     | Teal        |
-| Center-left  | `#0099DD` | 1100   | 0.65    | Blue        |
-| Center-right | `#FFCC00` | 900    | 0.7     | Yellow      |
-| Upper-left   | `#007B9E` | 850    | 0.6     | Dark teal   |
-| Center       | `#00A86B` | 800    | 0.55    | Green       |
-
-Gradient parameters: positioned organically (some extend beyond canvas edges), solid color to 40% offset, then fade to transparent by 100%. Gaussian blur filter applied for smooth blending. Base fill: `#007B6E`.
-
-### Logo Animation
-
-Z-shaped logo (3 filled parallelogram bars) revealed with a clip-rect draw animation. Each bar is revealed sequentially in a Z pattern: left→right, right→left, left→right. Android uses `ValueAnimator` + `Canvas.clipPath()`, macOS uses `CVDisplayLink` + `CGContext.clip()`.
-
-| Property    | Value                       |
-| ----------- | --------------------------- |
-| Scale       | 35% of `min(width, height)` |
-| Style       | Filled paths (no stroke)    |
-| Color light | `#FFFFFF`                   |
-| Color dark  | `#1A1A1A`                   |
-
-### Animation Sequence
-
-| Bar   | Duration | Begin | Direction  | Easing                             |
-| ----- | -------- | ----- | ---------- | ---------------------------------- |
-| Bar 1 | 250ms    | 0ms   | Left→right | `cubic-bezier(0.25, 0.1, 0.25, 1)` |
-| Bar 2 | 200ms    | 200ms | Right→left | `cubic-bezier(0.42, 0, 0.58, 1)`   |
-| Bar 3 | 250ms    | 350ms | Left→right | `cubic-bezier(0.25, 0.1, 0.6, 1)`  |
-| Wait  | —        | 500ms | —          | —                                  |
-
-No delay before animation starts. No undraw phase. Transition: splash slides down. On Android via `overridePendingTransition`, on macOS via SwiftUI if/else swap with `.move(edge: .bottom)`.
 
 ---
 
@@ -186,7 +142,7 @@ Persistent across views, content updates in place.
 
 ### Orbit Rings
 
-Three concentric rings with orbiting dots around the center content area.
+Three concentric rings with orbiting dots around the center content area. Fades in (800ms easeIn), rotation starts after 1s delay. Pauses when window loses focus, resumes on regain.
 
 - Container: 294 x 294
 - Ring stroke: 1pt, `secondary` at 8% opacity
@@ -198,6 +154,8 @@ Three concentric rings with orbiting dots around the center content area.
 | Outer  | 136    | 25s      | Clockwise         | 4pt `red`, 3pt `green`     |
 
 Each dot: 60% opacity fill with a glow circle behind it (40% opacity, 1.8x dot diameter).
+
+**Device planet**: When paired, the device name orbits on the middle ring as a capsule label (8pt font). Color reflects connection state: `red` disconnected, `green` remote focused, `yellow` idle.
 
 ### Power Button
 
@@ -221,7 +179,7 @@ Circular button at `button.sm` (94), centered in the orbit area.
 
 ### Circular QR Code
 
-120pt circular clip with dot-style modules. Center logo cutout at 28% radius with `WaveBLogoView` at 45% of cutout size (0.28 × 0.45). Uses "H" error correction (30%).
+120pt circular clip with dot-style modules. Center logo cutout at 28% radius with `BuzzelLogoView` at 45% of cutout size (0.28 × 0.45). Uses "H" error correction (30%).
 
 ### Status Line
 
@@ -259,7 +217,7 @@ Empty state: "No activity yet" centered in `secondary` color.
 ### Android (Phone)
 
 - Portrait only, bottom sheet (320 height)
-- Splash screen with mesh gradient + Z-draw logo animation
+- No splash screen (loads directly into main activity)
 - Foreground service notification when connected
 - QR: inline camera scanning with tap-to-focus
 - Permissions: Camera, Bluetooth, Location, Notifications
@@ -267,11 +225,11 @@ Empty state: "No activity yet" centered in `secondary` color.
 ### macOS (Computer)
 
 - Fixed window: 360 x 640 (9:16), hides on close (stays in Dock + status bar)
-- Splash screen with mesh gradient + Z-draw logo animation, same timing as Android
+- No splash screen (loads directly into main view)
 - QR: inline via AnimatedSwitcher, replacing the power button
 - Permissions: Bluetooth only
 - App icon in Dock (`LSUIElement` false)
-- Status bar icon: Z logo as template image
+- Status bar icon: Buzzel logo as template image
 
 | Status Bar State | Appearance                 |
 | ---------------- | -------------------------- |
@@ -295,9 +253,9 @@ Shared assets in `assets/` use **kebab-case**. Generated files: **snake_case** (
 
 ### Logo
 
-Z-shaped mark composed of three filled parallelogram paths (viewbox 512). No stroke. Color applied by context: `text` for header, white/dark for splash, template for status bar.
+B-shaped mark composed of curved paths (viewbox 512). No stroke. Color applied by context: `text` for header, `#1A1A1A` for app icon, template for status bar.
 
-Path data loaded at runtime from `brand.json` (`Brand.json` on macOS) via the `Brand` singleton. Splash config (scale, colors) hardcoded in platform `Brand` singletons.
+Path data loaded at runtime from `brand.json` (`Brand.json` on macOS) via the `Brand` singleton.
 
 ### Brand Config
 
@@ -320,7 +278,7 @@ Run via Makefile: `cd <platform> && make assets`. No arguments needed.
 Android requires: `rsvg-convert`, `magick`.
 macOS requires: `rsvg-convert`, `magick`, `iconutil`.
 
-App icon foreground: white logo on mesh gradient background. Padding: 180 (Android), 225 (macOS).
+App icon: `#1A1A1A` logo on grayscale mesh gradient background. Padding: 450 (Android), 225 (macOS).
 
 Adaptive icon XML descriptors generated for Android API 26+:
 
@@ -333,7 +291,6 @@ Adaptive icon XML descriptors generated for Android API 26+:
 | --------------------------------------------- | ----------------- |
 | `app/src/main/assets/brand.json`              | `logo.svg`        |
 | `app/src/main/assets/sofia-sans.ttf`          | `sofia-sans.ttf`  |
-| `res/drawable/mesh.png`                       | `mesh.svg`        |
 | `res/mipmap-*/ic_launcher.png`                | Both (composited) |
 | `res/mipmap-*/ic_launcher_background.png`     | `mesh.svg`        |
 | `res/mipmap-*/ic_launcher_foreground.png`     | `logo.svg`        |
@@ -346,7 +303,6 @@ Adaptive icon XML descriptors generated for Android API 26+:
 | ------------------------- | ----------------- |
 | `Resources/Brand.json`    | `logo.svg`        |
 | `Resources/SofiaSans.ttf` | `sofia-sans.ttf`  |
-| `Resources/Mesh.png`      | `mesh.svg`        |
 | `Resources/AppIcon.icns`  | Both (composited) |
 
 ---

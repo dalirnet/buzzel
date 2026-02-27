@@ -52,7 +52,6 @@ done
 
 echo "Cleaning generated resources..."
 remove app/src/main/assets/brand.json app/src/main/assets/sofia-sans.ttf
-remove app/src/main/res/drawable/mesh.png
 for d in app/src/main/res/mipmap-*/; do
     [ -d "$d" ] && remove "$d"
 done

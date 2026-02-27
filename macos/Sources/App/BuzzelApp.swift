@@ -5,7 +5,6 @@ import SwiftUI
 @main
 struct BuzzelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @State private var splashFinished = false
 
     init() {
         Brand.load()
@@ -14,11 +13,7 @@ struct BuzzelApp: App {
 
     var body: some Scene {
         Window("Buzzel", id: "main") {
-            if splashFinished {
-                MainView(store: AppStore.shared, transportManager: TransportManager.shared)
-            } else {
-                SplashView { splashFinished = true }
-            }
+            MainView(store: AppStore.shared, transportManager: TransportManager.shared)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)

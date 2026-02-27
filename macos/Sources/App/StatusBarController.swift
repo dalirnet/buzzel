@@ -24,7 +24,7 @@ class StatusBarController {
 
     private func setupButton() {
         guard let button = statusItem.button else { return }
-        button.image = Self.makeWaveBIcon()
+        button.image = Self.makeBuzzelIcon()
         button.appearsDisabled = true
         button.action = #selector(statusItemClicked(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -92,7 +92,7 @@ class StatusBarController {
         blinkTimer = nil
 
         guard let button = statusItem.button else { return }
-        button.image = Self.makeWaveBIcon()
+        button.image = Self.makeBuzzelIcon()
 
         switch state {
         case .active:
@@ -113,7 +113,7 @@ class StatusBarController {
 
     // MARK: - Icon Drawing
 
-    private static func makeWaveBIcon() -> NSImage {
+    private static func makeBuzzelIcon() -> NSImage {
         let size: CGFloat = 24
         let padding: CGFloat = 4.5
         let drawSize = size - padding * 2

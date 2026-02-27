@@ -6,6 +6,7 @@ import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import android.view.Choreographer
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import kotlin.math.abs
 import kotlin.math.cos
@@ -100,6 +101,8 @@ class OrbitRingsView(
             textAlign = Paint.Align.CENTER
         }
 
+    private val startDelay = 1_000_000_000L // 1 second in nanos
+
     private var startTime = System.nanoTime()
     private var running = false
     private var pausedElapsed = 0.0
@@ -121,9 +124,11 @@ class OrbitRingsView(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        startTime = System.nanoTime()
+        startTime = System.nanoTime() + startDelay
         running = true
         choreographer.postFrameCallback(frameCallback)
+        alpha = 0f
+        animate().alpha(1f).setDuration(800).setInterpolator(DecelerateInterpolator()).start()
     }
 
     override fun onDetachedFromWindow() {
@@ -135,9 +140,11 @@ class OrbitRingsView(
     override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
         super.onWindowFocusChanged(hasWindowFocus)
         if (hasWindowFocus) {
-            startTime = System.nanoTime() - (pausedElapsed * 1_000_000_000.0).toLong()
-            running = true
-            choreographer.postFrameCallback(frameCallback)
+            if (!running) {
+                startTime = System.nanoTime() - (pausedElapsed * 1_000_000_000.0).toLong()
+                running = true
+                choreographer.postFrameCallback(frameCallback)
+            }
         } else {
             pausedElapsed = (System.nanoTime() - startTime) / 1_000_000_000.0
             running = false
@@ -149,7 +156,7 @@ class OrbitRingsView(
         val cx = width / 2f
         val cy = height / 2f
         val density = resources.displayMetrics.density
-        val elapsed = (System.nanoTime() - startTime) / 1_000_000_000.0
+        val elapsed = maxOf(0.0, (System.nanoTime() - startTime) / 1_000_000_000.0)
 
         for (ring in rings) {
             val radiusPx = ring.radius * density

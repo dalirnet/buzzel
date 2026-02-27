@@ -33,7 +33,7 @@ else
 fi
 
 cp Resources/Info.plist build/Buzzel.app/Contents/
-for f in AppIcon.icns Brand.json Mesh.png SofiaSans.ttf; do
+for f in AppIcon.icns Brand.json SofiaSans.ttf; do
     cp "Resources/$f" build/Buzzel.app/Contents/Resources/ 2>/dev/null || true
 done
 

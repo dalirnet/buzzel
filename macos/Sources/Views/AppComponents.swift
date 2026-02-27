@@ -67,9 +67,9 @@ struct SVGIconView: View {
     }
 }
 
-// MARK: - Wave-B Logo View
+// MARK: - Buzzel Logo View
 
-struct WaveBLogoView: View {
+struct BuzzelLogoView: View {
     let size: CGFloat
     var color: Color = DesignColor.text
 
@@ -105,7 +105,7 @@ struct AppHeaderLabel: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            WaveBLogoView(size: 14)
+            BuzzelLogoView(size: 14)
                 .offset(y: -1)
 
             Text(displayedText)

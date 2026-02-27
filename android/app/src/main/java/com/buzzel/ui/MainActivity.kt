@@ -797,7 +797,7 @@ class MainActivity : Activity() {
                     gravity = Gravity.CENTER
                 }
             emptyState.addView(
-                WaveBLogoView(this@MainActivity, AppColors.withAlpha(AppColors.secondary, 77)).also {
+                BuzzelLogoView(this@MainActivity, AppColors.withAlpha(AppColors.secondary, 77)).also {
                     it.layoutParams =
                         LinearLayout.LayoutParams(dp(32), dp(32)).apply {
                             gravity = Gravity.CENTER_HORIZONTAL

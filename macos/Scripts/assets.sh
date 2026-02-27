@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Generate macOS app icon, splash assets, and brand.json from source SVGs.
+# Generate macOS app icon and brand.json from source SVGs.
 #
 # Usage:  sh assets.sh
 # Requires: rsvg-convert, magick, iconutil
@@ -9,7 +9,6 @@
 # Output:
 #   Resources/AppIcon.icns       — macOS app icon
 #   Resources/Brand.json         — runtime brand config
-#   Resources/Mesh.png            — splash background
 #   Resources/SofiaSans.ttf      — custom font
 
 set -euo pipefail
@@ -59,13 +58,12 @@ cat > Resources/Brand.json <<EOF
 EOF
 cp "$ASSETS/sofia-sans.ttf" Resources/SofiaSans.ttf
 
-# --- 3. Render mesh gradient ---
+# --- 3. Render mesh gradient for icon ---
 
 echo "Rendering mesh gradient..."
 rsvg-convert -w 1024 -h 1024 "$MESH" -o "$TMP/mesh.png"
-rsvg-convert -w 1080 -h 1920 "$MESH" -o Resources/Mesh.png
 
-# --- 4. Recolored logo SVG ---
+# --- 4. Logo mask SVG (white on black) ---
 
 PVB=$((VB + PADDING * 2))
 sed \
@@ -83,9 +81,11 @@ mkdir -p "$ICONSET"
 
 for pair in 16:icon_16x16 32:icon_16x16@2x 32:icon_32x32 64:icon_32x32@2x 128:icon_128x128 256:icon_128x128@2x 256:icon_256x256 512:icon_256x256@2x 512:icon_512x512 1024:icon_512x512@2x; do
     s="${pair%%:*}"; name="${pair##*:}"
-    magick "$TMP/mesh.png" -resize "${s}x${s}!" "$TMP/bg.png"
-    rsvg-convert -w "$s" -h "$s" "$TMP/logo.svg" -o "$TMP/fg.png"
-    magick "$TMP/bg.png" "$TMP/fg.png" -composite "$ICONSET/${name}.png"
+    rsvg-convert -w "$s" -h "$s" "$TMP/logo.svg" -o "$TMP/mask.png"
+    magick \
+        \( "$TMP/mesh.png" -resize "${s}x${s}!" \) \
+        \( -size "${s}x${s}" "xc:#1a1a1a" "$TMP/mask.png" -compose CopyOpacity -composite \) \
+        -compose Over -composite -define png:color-type=2 "$ICONSET/${name}.png"
 done
 
 iconutil --convert icns --output Resources/AppIcon.icns "$ICONSET"

@@ -17,7 +17,7 @@ class AppHeaderView(
     private val titleLabel: TextView
     private val badge: TextView
     private val trailingIcon: SVGIconView
-    private val logo: WaveBLogoView
+    private val logo: BuzzelLogoView
 
     private var currentTitle: String = ""
     private var isAnimating = false
@@ -43,7 +43,7 @@ class AppHeaderView(
             }
 
         // Logo
-        logo = WaveBLogoView(context)
+        logo = BuzzelLogoView(context)
         leadingGroup.addView(
             logo,
             LayoutParams(dp(16), dp(16)).apply {
