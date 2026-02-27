@@ -500,9 +500,9 @@ class ProtocolTest {
     fun bigEndian_commandSeq() {
         val payload = Protocol.createCommand(0x30, 0x0102)
         assertEquals(Signal.COMMAND, payload[0])
-        assertEquals(0x30.toByte(), payload[1]) // cmd
-        assertEquals(0x01.toByte(), payload[2]) // seq high
-        assertEquals(0x02.toByte(), payload[3]) // seq low
+        assertEquals(0x01.toByte(), payload[1]) // seq high
+        assertEquals(0x02.toByte(), payload[2]) // seq low
+        assertEquals(0x30.toByte(), payload[3]) // cmd
     }
 
     @Test
@@ -608,8 +608,8 @@ class ProtocolTest {
 
     @Test
     fun parseCommand_exactlyMinimumSize() {
-        // 4 bytes = signal + cmd + seq(2), no TLV data
-        val payload = byteArrayOf(Signal.COMMAND, 0x10, 0x00, 0x00)
+        // 4 bytes = signal + seq(2) + cmd, no TLV data
+        val payload = byteArrayOf(Signal.COMMAND, 0x00, 0x00, 0x10)
         val cmd = Protocol.parseCommand(payload)
         assertNotNull(cmd)
         assertEquals(0x10.toByte(), cmd!!.cmd)
