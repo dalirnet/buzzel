@@ -59,11 +59,16 @@ class MainActivity : Activity() {
         private const val TAG = "MainActivity"
         private const val PERMISSION_REQUEST = 1001
 
-        private val ICON_ARROW_DOWN = arrayOf(arrayOf("M12 5v14M5 12l7 7 7-7"))
-        private val ICON_ARROW_UP = arrayOf(arrayOf("M12 19V5M5 12l7-7 7 7"))
+        private val ICON_ARROW_DOWN = arrayOf(arrayOf("M12 4v16M5 13l7 7 7-7"))
+        private val ICON_ARROW_UP = arrayOf(arrayOf("M12 20V4M5 11l7-7 7 7"))
         private val ICON_DOT = arrayOf(arrayOf("M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0"))
 
-        private val ICON_ZAP = arrayOf(arrayOf(PowerButtonView.ZAP_PATH))
+        private val ICON_CLEAR =
+            arrayOf(
+                arrayOf(
+                    "M12.752,1.25 L12.816,1.25 C13.309,1.25 13.727,1.25 14.075,1.281 C14.444,1.314 14.788,1.386 15.122,1.559 C15.254,1.628 15.381,1.707 15.5,1.796 C15.802,2.021 16.016,2.299 16.207,2.617 C16.386,2.916 16.569,3.293 16.784,3.736 L16.784,3.736 L17.275,4.75 L21.75,4.75 C22.164,4.75 22.5,5.086 22.5,5.5 C22.5,5.914 22.164,6.25 21.75,6.25 L20.955,6.25 L20.376,15.61 C20.299,16.858 20.238,17.848 20.113,18.639 C19.984,19.45 19.778,20.126 19.366,20.717 C18.989,21.257 18.504,21.714 17.941,22.056 C17.326,22.431 16.639,22.595 15.821,22.674 C15.024,22.75 14.032,22.75 12.782,22.75 L12.704,22.75 C11.452,22.75 10.459,22.75 9.66,22.673 C8.842,22.595 8.154,22.431 7.539,22.055 C6.975,21.712 6.49,21.255 6.113,20.713 C5.701,20.121 5.496,19.445 5.368,18.632 C5.244,17.84 5.184,16.849 5.108,15.599 L4.544,6.25 L3.75,6.25 C3.336,6.25 3,5.914 3,5.5 C3,5.086 3.336,4.75 3.75,4.75 L8.32,4.75 L8.739,3.831 L8.739,3.831 C8.949,3.371 9.127,2.981 9.304,2.671 C9.492,2.342 9.705,2.052 10.011,1.818 C10.131,1.726 10.259,1.643 10.393,1.572 C10.733,1.391 11.085,1.317 11.462,1.282 C11.818,1.25 12.246,1.25 12.751,1.25 L12.752,1.25 Z M6.603,15.47 C6.682,16.767 6.738,17.687 6.85,18.399 C6.96,19.1 7.114,19.526 7.344,19.856 C7.602,20.227 7.934,20.54 8.32,20.775 C8.663,20.984 9.098,21.113 9.804,21.18 C10.522,21.249 11.443,21.25 12.743,21.25 C14.04,21.25 14.961,21.249 15.678,21.18 C16.383,21.113 16.817,20.985 17.16,20.775 C17.546,20.541 17.878,20.229 18.135,19.859 C18.366,19.529 18.52,19.104 18.631,18.404 C18.744,17.692 18.802,16.774 18.882,15.479 L19.452,6.25 L6.047,6.25 Z M9.75,10.985 L15.75,10.985 C16.164,10.985 16.5,11.321 16.5,11.735 C16.5,12.149 16.164,12.485 15.75,12.485 L9.75,12.485 C9.336,12.485 9,12.149 9,11.735 C9,11.321 9.336,10.985 9.75,10.985 Z M15.608,4.75 L15.448,4.419 C15.215,3.939 15.062,3.624 14.921,3.389 C14.787,3.166 14.692,3.065 14.603,2.998 C14.549,2.958 14.491,2.922 14.431,2.89 C14.333,2.839 14.2,2.798 13.941,2.775 C13.668,2.751 13.317,2.75 12.784,2.75 C12.238,2.75 11.878,2.751 11.598,2.776 C11.333,2.8 11.198,2.843 11.098,2.896 C11.037,2.929 10.978,2.966 10.924,3.008 C10.833,3.077 10.739,3.183 10.607,3.414 C10.467,3.658 10.318,3.985 10.091,4.482 L9.969,4.75 Z M11.25,14.904 L14.25,14.904 C14.664,14.904 15,15.24 15,15.654 C15,16.069 14.664,16.404 14.25,16.404 L11.25,16.404 C10.836,16.404 10.5,16.069 10.5,15.654 C10.5,15.24 10.836,14.904 11.25,14.904 Z",
+                ),
+            )
 
         private val ICON_SETTINGS =
             arrayOf(
@@ -277,6 +282,7 @@ class MainActivity : Activity() {
         headerView =
             AppHeaderView(this).apply {
                 onTrailingIconClick = { onTrailingIconTap() }
+                onLogoClick = { onLogoTap() }
             }
         rootLayout.addView(
             headerView,
@@ -484,10 +490,17 @@ class MainActivity : Activity() {
                 else -> "Buzzel"
             }
         headerView.setTitle(title)
+        headerView.setLeadingClickable(showActivityLog || showSettings || scanMode)
 
-        val trailingIcon = if (showActivityLog || showSettings || scanMode) ICON_ZAP else ICON_SETTINGS
-        headerView.setTrailingIcon(trailingIcon, SVGIconView.IconMode.FILL, AppColors.text)
-        headerView.setTrailingIconEnabled(true)
+        if (showActivityLog) {
+            headerView.setTrailingIcon(ICON_CLEAR, SVGIconView.IconMode.FILL, AppColors.text, size = 20)
+            headerView.setTrailingIconEnabled(true)
+        } else if (showSettings || scanMode) {
+            headerView.setTrailingIconEnabled(false)
+        } else {
+            headerView.setTrailingIcon(ICON_SETTINGS, SVGIconView.IconMode.FILL, AppColors.text)
+            headerView.setTrailingIconEnabled(true)
+        }
 
         val isPaired = app.configStore.pairingCode != null
         orbitRings.deviceName = if (isPaired) app.connectedDeviceName ?: "Mac" else null
@@ -593,9 +606,36 @@ class MainActivity : Activity() {
 
     private fun onTrailingIconTap() {
         when {
-            showActivityLog || showSettings -> showMainView()
-            scanMode -> exitScanMode()
-            else -> showSettingsView()
+            showActivityLog -> {
+                app.clearLogEntries()
+                activityLogContainer.removeAllViews()
+                val logView = buildActivityLogView()
+                activityLogContainer.addView(
+                    logView,
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                    ),
+                )
+            }
+
+            else -> {
+                showSettingsView()
+            }
+        }
+    }
+
+    private fun onLogoTap() {
+        when {
+            showActivityLog || showSettings -> {
+                showMainView()
+            }
+
+            scanMode -> {
+                exitScanMode()
+            }
+
+            else -> {}
         }
     }
 
@@ -858,7 +898,16 @@ class MainActivity : Activity() {
             gravity = Gravity.TOP
 
             // Direction icon
-            val iconColor = if (entry.status == LogStatus.SUCCESS) AppColors.green else AppColors.red
+            val iconColor =
+                if (entry.status != LogStatus.SUCCESS) {
+                    AppColors.red
+                } else {
+                    when (entry.direction) {
+                        LogDirection.INCOMING -> AppColors.blue
+                        LogDirection.OUTGOING -> AppColors.orange
+                        LogDirection.LOCAL -> AppColors.secondary
+                    }
+                }
             val iconPath =
                 when (entry.direction) {
                     LogDirection.INCOMING -> ICON_ARROW_DOWN
@@ -878,7 +927,7 @@ class MainActivity : Activity() {
                     this.iconColor = iconColor
                     strokeWidth = 2f
                 },
-                LinearLayout.LayoutParams(dp(14), dp(14)).apply {
+                LinearLayout.LayoutParams(dp(11), dp(11)).apply {
                     topMargin = dp(3)
                     marginEnd = dp(8)
                 },

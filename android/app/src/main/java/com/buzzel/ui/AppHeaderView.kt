@@ -23,6 +23,9 @@ class AppHeaderView(
     private var isAnimating = false
 
     var onTrailingIconClick: (() -> Unit)? = null
+    var onLogoClick: (() -> Unit)? = null
+
+    private val leadingGroup: LinearLayout
 
     init {
         orientation = HORIZONTAL
@@ -31,9 +34,17 @@ class AppHeaderView(
 
         setPadding(dp(20), dp(15), dp(20), dp(15))
 
+        // Leading group (logo + title)
+        leadingGroup =
+            LinearLayout(context).apply {
+                this.orientation = HORIZONTAL
+                this.gravity = Gravity.CENTER_VERTICAL
+                setOnClickListener { onLogoClick?.invoke() }
+            }
+
         // Logo
         logo = WaveBLogoView(context)
-        addView(
+        leadingGroup.addView(
             logo,
             LayoutParams(dp(16), dp(16)).apply {
                 marginEnd = dp(10)
@@ -47,7 +58,9 @@ class AppHeaderView(
                 setTextColor(AppColors.text)
                 typeface = Brand.typeface
             }
-        addView(titleLabel, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        leadingGroup.addView(titleLabel, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+
+        addView(leadingGroup, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
 
         // Badge
         badge =
@@ -105,19 +118,28 @@ class AppHeaderView(
         }
     }
 
+    fun setLeadingClickable(clickable: Boolean) {
+        leadingGroup.isClickable = clickable
+        leadingGroup.isFocusable = clickable
+    }
+
     fun setTrailingIcon(
         pathGroups: Array<Array<String>>,
         mode: SVGIconView.IconMode,
         color: Int,
+        size: Int = 25,
     ) {
         trailingIcon.pathGroups = pathGroups
         trailingIcon.mode = mode
         trailingIcon.iconColor = color
+        val dp = dp(context, size)
+        trailingIcon.layoutParams = LayoutParams(dp, dp)
     }
 
     fun setTrailingIconEnabled(enabled: Boolean) {
         trailingIcon.isEnabled = enabled
         trailingIcon.iconOpacity = if (enabled) 1f else 0.3f
+        trailingIcon.visibility = if (enabled) View.VISIBLE else View.GONE
     }
 
     // Typewriter animation: delete chars then type new chars, 35ms per step

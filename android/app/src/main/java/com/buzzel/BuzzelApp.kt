@@ -109,6 +109,10 @@ class BuzzelApp : Application() {
         synchronized(logEntryList) { return logEntryList.toList() }
     }
 
+    fun clearLogEntries() {
+        synchronized(logEntryList) { logEntryList.clear() }
+    }
+
     fun addLogEntryListener(listener: (LogEntry) -> Unit) {
         logEntryListeners.add(listener)
     }

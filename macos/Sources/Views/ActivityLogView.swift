@@ -56,8 +56,8 @@ struct ActivityLogView: View {
 private struct ActivityLogRow: View {
     let entry: LogEntry
 
-    private static let iconArrowDown: [[String]] = [["M12 5v14M5 12l7 7 7-7"]]
-    private static let iconArrowUp: [[String]] = [["M12 19V5M5 12l7-7 7 7"]]
+    private static let iconArrowDown: [[String]] = [["M12 4v16M5 13l7 7 7-7"]]
+    private static let iconArrowUp: [[String]] = [["M12 20V4M5 11l7-7 7 7"]]
     private static let iconDot: [[String]] = [["M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0"]]
 
     private var iconPaths: [[String]] {
@@ -73,14 +73,19 @@ private struct ActivityLogRow: View {
     }
 
     private var iconColor: Color {
-        entry.status == .success ? DesignColor.green : DesignColor.red
+        if entry.status != .success { return DesignColor.red }
+        switch entry.direction {
+        case .incoming: return DesignColor.blue
+        case .outgoing: return DesignColor.orange
+        case .local: return DesignColor.secondary
+        }
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            SVGIconView(paths: iconPaths, size: 14, color: iconColor, mode: iconMode)
+            SVGIconView(paths: iconPaths, size: 11, color: iconColor, mode: iconMode)
                 .frame(width: 14, height: 14)
-                .padding(.top, 3)
+                .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.message)
