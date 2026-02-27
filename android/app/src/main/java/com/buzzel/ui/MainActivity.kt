@@ -106,6 +106,7 @@ class MainActivity : Activity() {
     private var permissionsEverRequested = false
     private var stateListener: ((BuzzelService.ConnectionState) -> Unit)? = null
     private var logListener: ((LogEntry) -> Unit)? = null
+    private var remoteInFocusListener: ((Boolean) -> Unit)? = null
 
     // Camera / QR scanning
     private lateinit var cameraTextureView: TextureView
@@ -160,6 +161,18 @@ class MainActivity : Activity() {
         observeState()
     }
 
+    override fun onStart() {
+        super.onStart()
+        FileLogger.d(TAG, "App foreground (onStart)")
+        app.isAppInForeground = true
+    }
+
+    override fun onStop() {
+        super.onStop()
+        FileLogger.d(TAG, "App background (onStop)")
+        app.isAppInForeground = false
+    }
+
     override fun onResume() {
         super.onResume()
         if (AppColors.isDarkMode(this) != lastDarkMode) {
@@ -175,8 +188,10 @@ class MainActivity : Activity() {
     override fun onDestroy() {
         stateListener?.let { app.removeServiceConnectionStateListener(it) }
         logListener?.let { app.removeLogEntryListener(it) }
+        remoteInFocusListener?.let { app.removeRemoteInFocusListener(it) }
         stateListener = null
         logListener = null
+        remoteInFocusListener = null
         stopCamera()
         if (scannerInitialized) scanner.close()
         if (!app.isDeviceConnected) {
@@ -446,6 +461,10 @@ class MainActivity : Activity() {
         val logCallback = { _: LogEntry -> runOnUiThread { refreshStatusLine() } }
         logListener = logCallback
         app.addLogEntryListener(logCallback)
+
+        val focusCallback = { _: Boolean -> runOnUiThread { refreshState() } }
+        remoteInFocusListener = focusCallback
+        app.addRemoteInFocusListener(focusCallback)
     }
 
     private fun refreshState() {
@@ -471,8 +490,9 @@ class MainActivity : Activity() {
         headerView.setTrailingIconEnabled(true)
 
         val isPaired = app.configStore.pairingCode != null
-        orbitRings.deviceName = if (isPaired) "Mac" else null
+        orbitRings.deviceName = if (isPaired) app.connectedDeviceName ?: "Mac" else null
         orbitRings.isDeviceConnected = state == PowerButtonState.CONNECTED
+        orbitRings.isRemoteFocused = app.isRemoteInFocus
 
         refreshStatusLine()
     }

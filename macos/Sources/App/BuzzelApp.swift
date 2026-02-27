@@ -43,6 +43,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         configureMainWindow()
     }
 
+    func applicationDidBecomeActive(_: Notification) {
+        FileLogger.debug("App became active", category: "AppDelegate")
+        transportManager.sendFocus()
+    }
+
+    func applicationDidResignActive(_: Notification) {
+        FileLogger.debug("App resigned active", category: "AppDelegate")
+        transportManager.sendBlur()
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_: NSApplication) -> Bool {
         false
     }

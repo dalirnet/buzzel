@@ -1,3 +1,4 @@
+import AppKit
 import Combine
 import Foundation
 import Network
@@ -32,6 +33,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     @Published var connectingTransport: String = ""
     @Published var bleAuthorized = false
     @Published var bluetoothPoweredOff = false
+    @Published var remoteInFocus = false
 
     var onPairingComplete: ((String) -> Void)?
     var onDeviceReady: (() -> Void)?
@@ -41,7 +43,8 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
     private var bluetoothAuthorizationSubscription: AnyCancellable?
     private var bluetoothPoweredOffSubscription: AnyCancellable?
     private let maximumLogEntries = 100
-    private let deviceName = "Android"
+    private var deviceName = "Android"
+    private let localDeviceName = Host.current().localizedName ?? "Mac"
 
     private var failoverSteps: [Transport] = []
     private var failoverIndex = 0
@@ -202,11 +205,13 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
             isConnected = true
             activeTransport = currentTransport?.displayName ?? ""
             startKeepalive()
+            if NSApp.isActive { sendFocus() }
         }
 
         if newState != .active {
             isConnected = false
             activeTransport = ""
+            remoteInFocus = false
         }
         if newState != .connecting {
             connectingTransport = ""
@@ -503,6 +508,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
 
         if code == pairingCode {
             send(BuzzelProtocol.createPairResponse(accepted: true))
+            send(BuzzelProtocol.createReady(deviceName: localDeviceName))
             appendEntry(.pairingComplete, "Paired with \(deviceName)", direction: .incoming)
             clearPairingContext()
             transitionTo(.active)
@@ -562,7 +568,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
             handleIncomingPairResponse(payload)
 
         case Signal.ready:
-            handleIncomingReady()
+            handleIncomingReady(payload)
 
         case Signal.ping:
             send(BuzzelProtocol.createPong())
@@ -580,6 +586,12 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
         case Signal.unpair:
             appendEntry(.deviceDisconnected, "\(deviceName) unpaired", direction: .incoming)
             handleRemoteTermination()
+
+        case Signal.focus:
+            handleRemoteFocus()
+
+        case Signal.blur:
+            handleRemoteBlur()
 
         case Signal.command:
             handleIncomingCommand(payload)
@@ -606,7 +618,15 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
         }
     }
 
-    private func handleIncomingReady() {
+    private func handleIncomingReady(_ payload: Data) {
+        if let name = BuzzelProtocol.parseReadyDeviceName(payload) {
+            deviceName = name
+            if var device = AppStore.shared.pairedDevice, device.name != name {
+                device.name = name
+                AppStore.shared.pairedDevice = device
+                AppStore.shared.save()
+            }
+        }
         appendEntry(.deviceConnected, "\(deviceName) is ready", direction: .incoming)
         guard connectionState == .handshaking else {
             FileLogger.info(
@@ -643,6 +663,42 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
         )
     }
 
+    // MARK: - Visibility
+
+    private func handleRemoteFocus() {
+        guard connectionState == .active else { return }
+        FileLogger.info("Remote focus", category: logCategory)
+        remoteInFocus = true
+        appendEntry(.remoteFocus, "\(deviceName) gained focus", direction: .incoming)
+    }
+
+    private func handleRemoteBlur() {
+        guard connectionState == .active else { return }
+        FileLogger.info("Remote blur", category: logCategory)
+        remoteInFocus = false
+        appendEntry(.remoteBlur, "\(deviceName) lost focus", direction: .incoming)
+    }
+
+    func sendFocus() {
+        guard connectionState == .active else {
+            FileLogger.debug("Focus skipped (state=\(connectionState))", category: logCategory)
+            return
+        }
+        FileLogger.debug("Sending focus", category: logCategory)
+        send(BuzzelProtocol.createFocus())
+        appendEntry(.remoteFocus, "Gained focus", direction: .outgoing)
+    }
+
+    func sendBlur() {
+        guard connectionState == .active else {
+            FileLogger.debug("Blur skipped (state=\(connectionState))", category: logCategory)
+            return
+        }
+        FileLogger.debug("Sending blur", category: logCategory)
+        send(BuzzelProtocol.createBlur())
+        appendEntry(.remoteBlur, "Lost focus", direction: .outgoing)
+    }
+
     // MARK: - Transport Delegate Helpers
 
     private func transportDidConnect(_ transport: Transport) {
@@ -661,7 +717,7 @@ class TransportManager: ObservableObject, BleCentralDelegate, TcpServerDelegate 
             isPairing = true
         } else {
             FileLogger.debug("Sending ready signal", category: logCategory)
-            send(BuzzelProtocol.createReady())
+            send(BuzzelProtocol.createReady(deviceName: localDeviceName))
         }
     }
 

@@ -23,6 +23,7 @@ object AppColors {
         private set
 
     // Fixed system colors
+    val blue: Int = Color.rgb(0, 122, 255)
     val green: Int = Color.rgb(52, 199, 89)
     val yellow: Int = Color.rgb(255, 204, 0)
     val orange: Int = Color.rgb(255, 149, 0)

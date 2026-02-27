@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.provider.Settings
 import androidx.core.app.NotificationCompat
 import com.buzzel.BuzzelApp
 import com.buzzel.R
@@ -49,13 +50,15 @@ class BuzzelService : Service() {
     private var started = false
     private var handshakeTimeoutRunnable: Runnable? = null
     private var failoverRunnable: Runnable? = null
-    private val deviceName = "Mac"
+    private var deviceName = "Mac"
+    private lateinit var localDeviceName: String
 
     private var nextSequenceNumber = 0
     private var pendingAcknowledgmentSequenceNumber: Int? = null
     private var pendingRetries = 0
     private var retryPayload: ByteArray? = null
     private var retryRunnable: Runnable? = null
+    private var foregroundListener: ((Boolean) -> Unit)? = null
 
     private var failoverSteps: List<String> = emptyList()
     private var failoverIndex = 0
@@ -213,6 +216,7 @@ class BuzzelService : Service() {
                 handler.removeCallbacks(pingRunnable)
                 cancelHandshakeTimeout()
                 cancelRetry()
+                app.isRemoteInFocus = false
             }
 
             ConnectionState.CONNECTING -> {
@@ -235,6 +239,9 @@ class BuzzelService : Service() {
                 reconnectAttempts = 0
                 handler.removeCallbacks(pingRunnable)
                 handler.postDelayed(pingRunnable, PING_INTERVAL_MILLISECONDS)
+                if (app.isAppInForeground) {
+                    handler.post { sendFocus() }
+                }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     startForeground(
                         NOTIFICATION_ID,
@@ -324,6 +331,15 @@ class BuzzelService : Service() {
     override fun onCreate() {
         super.onCreate()
         FileLogger.i(TAG, "Service created")
+        localDeviceName =
+            Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME)
+                ?: Build.MODEL
+
+        val listener: (Boolean) -> Unit = { inForeground ->
+            handler.post { if (inForeground) sendFocus() else sendBlur() }
+        }
+        foregroundListener = listener
+        app.addForegroundListener(listener)
 
         transport =
             TransportManager(
@@ -358,7 +374,7 @@ class BuzzelService : Service() {
                             val code = app.configStore.pairingCode
                             if (code != null && app.configStore.sessionId != null) {
                                 FileLogger.d(TAG, "Sending ready signal (reconnection)")
-                                transport.send(Protocol.createReady())
+                                transport.send(Protocol.createReady(localDeviceName))
                             } else if (code != null) {
                                 FileLogger.d(TAG, "Sending pair request (first pairing)")
                                 transport.send(Protocol.createPairRequest(code))
@@ -471,6 +487,8 @@ class BuzzelService : Service() {
 
     override fun onDestroy() {
         FileLogger.i(TAG, "Service destroyed (state=$state)")
+        foregroundListener?.let { app.removeForegroundListener(it) }
+        foregroundListener = null
         transitionTo(ConnectionState.IDLE)
         handler.removeCallbacks(pingRunnable)
         cancelHandshakeTimeout()
@@ -490,6 +508,10 @@ class BuzzelService : Service() {
 
         when (signalId) {
             Signal.READY -> {
+                Protocol.parseReadyDeviceName(payload)?.let { name ->
+                    deviceName = name
+                    app.connectedDeviceName = name
+                }
                 app.appendLogEntry(
                     LogEntry(
                         type = LogEventType.DEVICE_CONNECTED,
@@ -553,6 +575,7 @@ class BuzzelService : Service() {
                 )
                 if (result != null && result.first) {
                     app.configStore.completePairing()
+                    transport.send(Protocol.createReady(localDeviceName))
                     app.appendLogEntry(
                         LogEntry(
                             type = LogEventType.PAIRING_COMPLETE,
@@ -592,11 +615,71 @@ class BuzzelService : Service() {
                     handleCommand(command)
                 }
             }
+
+            Signal.FOCUS -> {
+                if (state == ConnectionState.ACTIVE) {
+                    FileLogger.i(TAG, "Remote focus")
+                    app.isRemoteInFocus = true
+                    app.appendLogEntry(
+                        LogEntry(
+                            type = LogEventType.REMOTE_FOCUS,
+                            message = "$deviceName gained focus",
+                            direction = LogDirection.INCOMING,
+                        ),
+                    )
+                }
+            }
+
+            Signal.BLUR -> {
+                if (state == ConnectionState.ACTIVE) {
+                    FileLogger.i(TAG, "Remote blur")
+                    app.isRemoteInFocus = false
+                    app.appendLogEntry(
+                        LogEntry(
+                            type = LogEventType.REMOTE_BLUR,
+                            message = "$deviceName lost focus",
+                            direction = LogDirection.INCOMING,
+                        ),
+                    )
+                }
+            }
         }
     }
 
     private fun handleCommand(command: Protocol.Command) {
         FileLogger.d(TAG, "Command 0x${String.format("%02x", command.commandIdentifier)} seq=${command.sequenceNumber}")
+    }
+
+    fun sendFocus() {
+        if (state != ConnectionState.ACTIVE) {
+            FileLogger.d(TAG, "Focus skipped (state=$state)")
+            return
+        }
+        FileLogger.d(TAG, "Sending focus")
+        transport.send(Protocol.createFocus())
+        app.appendLogEntry(
+            LogEntry(
+                type = LogEventType.REMOTE_FOCUS,
+                message = "Gained focus",
+                direction = LogDirection.OUTGOING,
+            ),
+        )
+    }
+
+    fun sendBlur() {
+        if (state != ConnectionState.ACTIVE) {
+            FileLogger.d(TAG, "Blur skipped (state=$state)")
+            return
+        }
+        FileLogger.d(TAG, "Sending blur")
+        transport.send(Protocol.createBlur())
+        app.appendLogEntry(
+            LogEntry(
+                type = LogEventType.REMOTE_BLUR,
+                message = "Lost focus",
+                direction = LogDirection.OUTGOING,
+            ),
+        )
     }
 
     private fun buildNotification(): Notification {

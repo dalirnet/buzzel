@@ -94,6 +94,20 @@ class ProtocolTest {
         val payload = Protocol.createReady()
         assertEquals(1, payload.size)
         assertEquals(Signal.READY, payload[0])
+        assertNull(Protocol.parseReadyDeviceName(payload))
+    }
+
+    @Test
+    fun createReadyWithDeviceName() {
+        val payload = Protocol.createReady("Pixel 7")
+        assertEquals(Signal.READY, payload[0])
+        assertEquals(1 + "Pixel 7".toByteArray(Charsets.UTF_8).size, payload.size)
+        assertEquals("Pixel 7", Protocol.parseReadyDeviceName(payload))
+    }
+
+    @Test
+    fun parseReadyDeviceNameEmpty() {
+        assertNull(Protocol.parseReadyDeviceName(byteArrayOf()))
     }
 
     @Test
@@ -108,6 +122,20 @@ class ProtocolTest {
         val payload = Protocol.createUnpair()
         assertEquals(1, payload.size)
         assertEquals(Signal.UNPAIR, payload[0])
+    }
+
+    @Test
+    fun createFocus() {
+        val payload = Protocol.createFocus()
+        assertEquals(1, payload.size)
+        assertEquals(Signal.FOCUS, payload[0])
+    }
+
+    @Test
+    fun createBlur() {
+        val payload = Protocol.createBlur()
+        assertEquals(1, payload.size)
+        assertEquals(Signal.BLUR, payload[0])
     }
 
     // --- pair.request ---
@@ -193,6 +221,8 @@ class ProtocolTest {
         assertEquals(Signal.PAIR_REQUEST, Protocol.parseSignalIdentifier(byteArrayOf(0x01)))
         assertEquals(Signal.PING, Protocol.parseSignalIdentifier(byteArrayOf(0x04)))
         assertEquals(Signal.UNPAIR, Protocol.parseSignalIdentifier(byteArrayOf(0x08)))
+        assertEquals(Signal.FOCUS, Protocol.parseSignalIdentifier(byteArrayOf(0x09)))
+        assertEquals(Signal.BLUR, Protocol.parseSignalIdentifier(byteArrayOf(0x0A)))
     }
 
     @Test
@@ -425,6 +455,18 @@ class ProtocolTest {
     @Test
     fun wireSize_unpair() {
         val frame = FrameCodec.encode(Protocol.createUnpair())
+        assertEquals(3, frame.size)
+    }
+
+    @Test
+    fun wireSize_focus() {
+        val frame = FrameCodec.encode(Protocol.createFocus())
+        assertEquals(3, frame.size)
+    }
+
+    @Test
+    fun wireSize_blur() {
+        val frame = FrameCodec.encode(Protocol.createBlur())
         assertEquals(3, frame.size)
     }
 
@@ -803,6 +845,8 @@ class ProtocolTest {
         assertTrue(Protocol.createReady().size <= minimumMaximumPayloadSize)
         assertTrue(Protocol.createGoodbye().size <= minimumMaximumPayloadSize)
         assertTrue(Protocol.createUnpair().size <= minimumMaximumPayloadSize)
+        assertTrue(Protocol.createFocus().size <= minimumMaximumPayloadSize)
+        assertTrue(Protocol.createBlur().size <= minimumMaximumPayloadSize)
         assertTrue(Protocol.createPairRequest("123456").size <= minimumMaximumPayloadSize)
         assertTrue(Protocol.createPairResponse(true).size <= minimumMaximumPayloadSize)
         assertTrue(Protocol.createAcknowledgment(65535).size <= minimumMaximumPayloadSize)

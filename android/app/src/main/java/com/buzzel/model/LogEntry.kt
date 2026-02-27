@@ -10,6 +10,8 @@ enum class LogEventType {
     PAIRING_STARTED,
     PAIRING_COMPLETE,
     PAIRING_FAILED,
+    REMOTE_FOCUS,
+    REMOTE_BLUR,
 }
 
 enum class LogDirection {

@@ -9,6 +9,7 @@ enum DesignColor {
     static let background = Color(nsColor: .controlBackgroundColor)
     static let border = Color(nsColor: .separatorColor)
     static let accent = Color(nsColor: .controlAccentColor)
+    static let blue = Color(nsColor: .systemBlue)
     static let green = Color(nsColor: .systemGreen)
     static let yellow = Color(nsColor: .systemYellow)
     static let orange = Color(nsColor: .systemOrange)

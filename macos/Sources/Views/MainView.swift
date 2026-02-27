@@ -113,7 +113,9 @@ struct MainView: View {
             Spacer()
 
             OrbitRingsView(
-                deviceName: store.pairedDevice?.name, isConnected: powerState == .connected
+                deviceName: store.pairedDevice?.name,
+                isConnected: powerState == .connected,
+                isRemoteFocused: transportManager.remoteInFocus
             ) {
                 AnimatedSwitcher(key: showQRCode) { isShowingQRCode in
                     if isShowingQRCode {

@@ -16,6 +16,8 @@ enum Signal {
     static let acknowledgment: UInt8 = 0x06
     static let goodbye: UInt8 = 0x07
     static let unpair: UInt8 = 0x08
+    static let focus: UInt8 = 0x09
+    static let blur: UInt8 = 0x0A
 }
 
 // MARK: - Bluetooth Low Energy UUIDs
@@ -113,8 +115,17 @@ enum BuzzelProtocol {
         Data([Signal.pong])
     }
 
-    static func createReady() -> Data {
-        Data([Signal.ready])
+    static func createReady(deviceName: String? = nil) -> Data {
+        var buffer = Data([Signal.ready])
+        if let name = deviceName, let nameData = name.data(using: .utf8) {
+            buffer.append(nameData)
+        }
+        return buffer
+    }
+
+    static func parseReadyDeviceName(_ payload: Data) -> String? {
+        guard payload.count > 1, payload[0] == Signal.ready else { return nil }
+        return String(data: payload.subdata(in: 1..<payload.count), encoding: .utf8)
     }
 
     static func createGoodbye() -> Data {
@@ -123,6 +134,14 @@ enum BuzzelProtocol {
 
     static func createUnpair() -> Data {
         Data([Signal.unpair])
+    }
+
+    static func createFocus() -> Data {
+        Data([Signal.focus])
+    }
+
+    static func createBlur() -> Data {
+        Data([Signal.blur])
     }
 
     static func createPairRequest(code: String) -> Data {

@@ -16,6 +16,8 @@ object Signal {
     const val ACKNOWLEDGMENT: Byte = 0x06
     const val GOODBYE: Byte = 0x07
     const val UNPAIR: Byte = 0x08
+    const val FOCUS: Byte = 0x09
+    const val BLUR: Byte = 0x0A
 }
 
 object BluetoothServiceUUIDs {
@@ -100,11 +102,27 @@ object Protocol {
 
     fun createPong(): ByteArray = byteArrayOf(Signal.PONG)
 
-    fun createReady(): ByteArray = byteArrayOf(Signal.READY)
+    fun createReady(deviceName: String? = null): ByteArray {
+        val nameBytes = deviceName?.toByteArray(Charsets.UTF_8)
+        if (nameBytes == null || nameBytes.isEmpty()) return byteArrayOf(Signal.READY)
+        val buffer = ByteArray(1 + nameBytes.size)
+        buffer[0] = Signal.READY
+        System.arraycopy(nameBytes, 0, buffer, 1, nameBytes.size)
+        return buffer
+    }
+
+    fun parseReadyDeviceName(payload: ByteArray): String? {
+        if (payload.size <= 1 || payload[0] != Signal.READY) return null
+        return String(payload, 1, payload.size - 1, Charsets.UTF_8)
+    }
 
     fun createGoodbye(): ByteArray = byteArrayOf(Signal.GOODBYE)
 
     fun createUnpair(): ByteArray = byteArrayOf(Signal.UNPAIR)
+
+    fun createFocus(): ByteArray = byteArrayOf(Signal.FOCUS)
+
+    fun createBlur(): ByteArray = byteArrayOf(Signal.BLUR)
 
     fun createPairRequest(code: String): ByteArray {
         val codeBytes = code.toByteArray(Charsets.US_ASCII)

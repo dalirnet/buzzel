@@ -38,9 +38,43 @@ class BuzzelApp : Application() {
 
     var connectedDeviceName: String? = null
 
+    var isRemoteInFocus: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            remoteInFocusListeners.forEach { it(value) }
+        }
+
+    private val remoteInFocusListeners = mutableListOf<(Boolean) -> Unit>()
+
+    fun addRemoteInFocusListener(listener: (Boolean) -> Unit) {
+        remoteInFocusListeners.add(listener)
+    }
+
+    fun removeRemoteInFocusListener(listener: (Boolean) -> Unit) {
+        remoteInFocusListeners.remove(listener)
+    }
+
     var connectedTransport: String? = null
 
     var connectingTransport: String? = null
+
+    var isAppInForeground: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            foregroundListeners.forEach { it(value) }
+        }
+
+    private val foregroundListeners = mutableListOf<(Boolean) -> Unit>()
+
+    fun addForegroundListener(listener: (Boolean) -> Unit) {
+        foregroundListeners.add(listener)
+    }
+
+    fun removeForegroundListener(listener: (Boolean) -> Unit) {
+        foregroundListeners.remove(listener)
+    }
 
     var serviceConnectionState: BuzzelService.ConnectionState = BuzzelService.ConnectionState.IDLE
         set(value) {

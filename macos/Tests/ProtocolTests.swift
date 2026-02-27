@@ -142,6 +142,15 @@ func testNoPayloadSignals() {
     assertEqual(ready.count, 1, "ready size")
     assertEqual(ready[0], Signal.ready, "ready id")
 
+    let readyWithName = BuzzelProtocol.createReady(deviceName: "MacBook Pro")
+    assertEqual(readyWithName[0], Signal.ready, "readyWithName id")
+    assertEqual(readyWithName.count, 1 + "MacBook Pro".utf8.count, "readyWithName size")
+    let parsedName = BuzzelProtocol.parseReadyDeviceName(readyWithName)
+    assertEqual(parsedName ?? "", "MacBook Pro", "readyWithName parsedName")
+
+    assertNil(BuzzelProtocol.parseReadyDeviceName(ready), "ready no name")
+    assertNil(BuzzelProtocol.parseReadyDeviceName(Data()), "ready empty")
+
     let goodbye = BuzzelProtocol.createGoodbye()
     assertEqual(goodbye.count, 1, "goodbye size")
     assertEqual(goodbye[0], Signal.goodbye, "goodbye id")
@@ -149,6 +158,14 @@ func testNoPayloadSignals() {
     let unpair = BuzzelProtocol.createUnpair()
     assertEqual(unpair.count, 1, "unpair size")
     assertEqual(unpair[0], Signal.unpair, "unpair id")
+
+    let focus = BuzzelProtocol.createFocus()
+    assertEqual(focus.count, 1, "focus size")
+    assertEqual(focus[0], Signal.focus, "focus id")
+
+    let blur = BuzzelProtocol.createBlur()
+    assertEqual(blur.count, 1, "blur size")
+    assertEqual(blur[0], Signal.blur, "blur id")
 }
 
 // MARK: - pair.request
@@ -243,6 +260,14 @@ func testParseSignalIdentifier() {
     assertEqual(
         BuzzelProtocol.parseSignalIdentifier(Data([0x08])), Signal.unpair,
         "signalIdentifier unpair"
+    )
+    assertEqual(
+        BuzzelProtocol.parseSignalIdentifier(Data([0x09])), Signal.focus,
+        "signalIdentifier focus"
+    )
+    assertEqual(
+        BuzzelProtocol.parseSignalIdentifier(Data([0x0A])), Signal.blur,
+        "signalIdentifier blur"
     )
     assertNil(BuzzelProtocol.parseSignalIdentifier(Data()), "signalIdentifier empty")
 }
@@ -456,6 +481,8 @@ func testWireSize() {
     assertEqual(FrameCodec.encode(BuzzelProtocol.createReady()).count, 3, "wireSize ready")
     assertEqual(FrameCodec.encode(BuzzelProtocol.createGoodbye()).count, 3, "wireSize goodbye")
     assertEqual(FrameCodec.encode(BuzzelProtocol.createUnpair()).count, 3, "wireSize unpair")
+    assertEqual(FrameCodec.encode(BuzzelProtocol.createFocus()).count, 3, "wireSize focus")
+    assertEqual(FrameCodec.encode(BuzzelProtocol.createBlur()).count, 3, "wireSize blur")
 
     // pair.request: 2 + 7 = 9
     assertEqual(
@@ -868,6 +895,14 @@ func testDynamicSizing() {
     assert(
         BuzzelProtocol.createUnpair().count <= minimumMaximumPayloadSize,
         "dynamic unpair fits min MTU"
+    )
+    assert(
+        BuzzelProtocol.createFocus().count <= minimumMaximumPayloadSize,
+        "dynamic focus fits min MTU"
+    )
+    assert(
+        BuzzelProtocol.createBlur().count <= minimumMaximumPayloadSize,
+        "dynamic blur fits min MTU"
     )
     assert(
         BuzzelProtocol.createPairRequest(code: "123456").count <= minimumMaximumPayloadSize,

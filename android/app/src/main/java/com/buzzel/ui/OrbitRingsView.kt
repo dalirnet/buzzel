@@ -38,6 +38,12 @@ class OrbitRingsView(
             invalidate()
         }
 
+    var isRemoteFocused: Boolean = false
+        set(value) {
+            field = value
+            invalidate()
+        }
+
     private val rings =
         listOf(
             Ring(
@@ -211,7 +217,14 @@ class OrbitRingsView(
         val pillH = textBounds.height() + padV * 2
         val pillRect = RectF(px - pillW / 2, py - pillH / 2, px + pillW / 2, py + pillH / 2)
 
-        val planetColor = if (isDeviceConnected) AppColors.green else AppColors.red
+        val planetColor =
+            if (!isDeviceConnected) {
+                AppColors.red
+            } else if (isRemoteFocused) {
+                AppColors.green
+            } else {
+                AppColors.yellow
+            }
         planetBgPaint.color = AppColors.withAlpha(planetColor, 38) // ~15%
         canvas.drawRoundRect(pillRect, pillH / 2, pillH / 2, planetBgPaint)
 

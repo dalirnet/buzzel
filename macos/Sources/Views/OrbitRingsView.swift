@@ -5,6 +5,7 @@ import SwiftUI
 struct OrbitRingsView<Content: View>: View {
     var deviceName: String?
     var isConnected: Bool = true
+    var isRemoteFocused: Bool = false
     @ViewBuilder let content: () -> Content
 
     @State private var startDate = Date.now
@@ -71,6 +72,11 @@ struct OrbitRingsView<Content: View>: View {
         .rotationEffect(.degrees(angle))
     }
 
+    private var devicePlanetColor: Color {
+        if !isConnected { return DesignColor.red }
+        return isRemoteFocused ? DesignColor.green : DesignColor.yellow
+    }
+
     // MARK: - Device Planet
 
     private func devicePlanet(name: String, elapsed: TimeInterval) -> some View {
@@ -86,7 +92,7 @@ struct OrbitRingsView<Content: View>: View {
             .lineLimit(1)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background((isConnected ? DesignColor.green : DesignColor.red).opacity(0.15))
+            .background(devicePlanetColor.opacity(0.15))
             .clipShape(Capsule())
             .rotationEffect(.degrees(-(angle + planetOffset * 360)))
             .offset(x: ring.radius)

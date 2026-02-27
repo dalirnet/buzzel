@@ -5,6 +5,8 @@ enum LogEventType: String {
     case deviceDisconnected
     case pairingComplete
     case pairingFailed
+    case remoteFocus
+    case remoteBlur
 }
 
 enum LogDirection {
