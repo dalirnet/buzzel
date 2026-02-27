@@ -31,7 +31,7 @@ enum BuzzelProtocol {
 
   static let tcpPort: UInt16 = 48155
   static let frameHeader = 2
-  static let commandHeader = 3  // cmd(1) + seq(2)
+  static let commandHeader = 3  // seq(2) + cmd(1)
   static let attOverhead = 3
   static let tlvMaxValue = 255  // 1-byte Len field
   static let wifiMaxFrame = 4096
@@ -153,17 +153,17 @@ enum BuzzelProtocol {
     let dataLen = min(tlvData.count, maxTlvData)
     var buf = Data(capacity: 1 + commandHeader + dataLen)
     buf.append(Signal.command)
-    buf.append(cmd)
     buf.append(UInt8(seq >> 8))
     buf.append(UInt8(seq & 0xFF))
+    buf.append(cmd)
     if dataLen > 0 { buf.append(tlvData.prefix(dataLen)) }
     return buf
   }
 
   static func parseCommand(_ payload: Data) -> Command? {
     guard payload.count >= 4, payload[0] == Signal.command else { return nil }
-    let cmd = payload[1]
-    let seq = UInt16(payload[2]) << 8 | UInt16(payload[3])
+    let seq = UInt16(payload[1]) << 8 | UInt16(payload[2])
+    let cmd = payload[3]
     let data = payload.count > 4 ? payload.subdata(in: 4..<payload.count) : Data()
     return Command(cmd: cmd, seq: seq, data: data)
   }

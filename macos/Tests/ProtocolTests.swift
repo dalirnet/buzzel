@@ -415,9 +415,9 @@ func testBigEndian() {
   // command seq 0x0102
   let cmd = BuzzelProtocol.createCommand(cmd: 0x30, seq: 0x0102)
   assertEqual(cmd[0], Signal.command, "BE cmd signal")
-  assertEqual(cmd[1], 0x30, "BE cmd byte")
-  assertEqual(cmd[2], 0x01, "BE cmd seq hi")
-  assertEqual(cmd[3], 0x02, "BE cmd seq lo")
+  assertEqual(cmd[1], 0x01, "BE cmd seq hi")
+  assertEqual(cmd[2], 0x02, "BE cmd seq lo")
+  assertEqual(cmd[3], 0x30, "BE cmd byte")
 
   // TLV int 0x01020304
   let tlvInt = BuzzelProtocol.tlvEncodeInt(tag: 0x01, value: 0x0102_0304)
@@ -494,7 +494,7 @@ func testMalformedInput() {
     BuzzelProtocol.parseAckSeq(Data([Signal.ping, 0x00, 0x01])), "malformed ack wrong signal")
 
   // Exact minimum command size (4 bytes)
-  let minCmd = Data([Signal.command, 0x10, 0x00, 0x00])
+  let minCmd = Data([Signal.command, 0x00, 0x00, 0x10])
   let cmd = BuzzelProtocol.parseCommand(minCmd)
   assertNotNil(cmd, "malformed cmd minimum")
   assertEqual(cmd!.cmd, 0x10, "malformed cmd minimum cmd")
