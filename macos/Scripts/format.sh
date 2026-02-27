@@ -8,7 +8,7 @@ for cmd in swift-format jq; do
 done
 
 find Sources Tests -name '*.swift' | while read -r file; do
-    swift-format format -i "$file"
+    swift-format format -i --configuration .swift-format.json "$file"
 done
 
 for f in $(find Resources -name '*.json' 2>/dev/null); do

@@ -3,131 +3,134 @@ import SwiftUI
 // MARK: - Orbit Rings View
 
 struct OrbitRingsView<Content: View>: View {
-  var deviceName: String?
-  var isConnected: Bool = true
-  @ViewBuilder let content: () -> Content
+    var deviceName: String?
+    var isConnected: Bool = true
+    @ViewBuilder let content: () -> Content
 
-  @State private var startDate = Date.now
-  @State private var isWindowFocused = true
-  @State private var pausedElapsed: TimeInterval = 0
+    @State private var startDate = Date.now
+    @State private var isWindowFocused = true
+    @State private var pausedElapsed: TimeInterval = 0
 
-  var body: some View {
-    TimelineView(.animation) { timeline in
-      let elapsed =
-        isWindowFocused
-        ? timeline.date.timeIntervalSince(startDate) : pausedElapsed
-      ZStack {
-        ForEach(Array(Self.rings.enumerated()), id: \.offset) { _, ring in
-          ringView(ring: ring, elapsed: elapsed)
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let elapsed =
+                isWindowFocused
+                ? timeline.date.timeIntervalSince(startDate) : pausedElapsed
+            ZStack {
+                ForEach(Array(Self.rings.enumerated()), id: \.offset) { _, ring in
+                    ringView(ring: ring, elapsed: elapsed)
+                }
+
+                if let name = deviceName {
+                    devicePlanet(name: name, elapsed: elapsed)
+                }
+
+                content()
+            }
         }
-
-        if let name = deviceName {
-          devicePlanet(name: name, elapsed: elapsed)
+        .frame(width: 294, height: 294)
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+        ) { _ in
+            startDate = Date.now.addingTimeInterval(-pausedElapsed)
+            isWindowFocused = true
         }
-
-        content()
-      }
-    }
-    .frame(width: 294, height: 294)
-    .onReceive(
-      NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
-    ) { _ in
-      startDate = Date.now.addingTimeInterval(-pausedElapsed)
-      isWindowFocused = true
-    }
-    .onReceive(
-      NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
-    ) { _ in
-      pausedElapsed = Date.now.timeIntervalSince(startDate)
-      isWindowFocused = false
-    }
-  }
-
-  // MARK: - Ring View
-
-  private func ringView(ring: Ring, elapsed: TimeInterval) -> some View {
-    let progress = elapsed / abs(ring.duration)
-    let direction: Double = ring.duration > 0 ? 1 : -1
-    let angle = progress * 360 * direction
-
-    return ZStack {
-      Circle()
-        .stroke(DesignColor.secondary.opacity(0.08), lineWidth: 1)
-        .frame(width: ring.radius * 2, height: ring.radius * 2)
-
-      ForEach(Array(ring.dots.enumerated()), id: \.offset) { _, dot in
-        ZStack {
-          Circle()
-            .fill(dot.color.opacity(0.4))
-            .frame(width: dot.size + dot.size * 0.8, height: dot.size + dot.size * 0.8)
-          Circle()
-            .fill(dot.color.opacity(0.6))
-            .frame(width: dot.size, height: dot.size)
+        .onReceive(
+            NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+        ) { _ in
+            pausedElapsed = Date.now.timeIntervalSince(startDate)
+            isWindowFocused = false
         }
-        .offset(x: ring.radius)
-        .rotationEffect(.degrees(dot.offset * 360))
-      }
     }
-    .rotationEffect(.degrees(angle))
-  }
 
-  // MARK: - Device Planet
+    // MARK: - Ring View
 
-  private func devicePlanet(name: String, elapsed: TimeInterval) -> some View {
-    let ring = Self.rings[1]  // middle ring
-    let progress = elapsed / abs(ring.duration)
-    let direction: Double = ring.duration > 0 ? 1 : -1
-    let angle = progress * 360 * direction
-    let planetOffset: Double = 0.45
+    private func ringView(ring: Ring, elapsed: TimeInterval) -> some View {
+        let progress = elapsed / abs(ring.duration)
+        let direction: Double = ring.duration > 0 ? 1 : -1
+        let angle = progress * 360 * direction
 
-    return Text(name)
-      .font(Brand.font(size: 8))
-      .foregroundColor(DesignColor.text)
-      .lineLimit(1)
-      .padding(.horizontal, 6)
-      .padding(.vertical, 3)
-      .background((isConnected ? DesignColor.green : DesignColor.red).opacity(0.15))
-      .clipShape(Capsule())
-      .rotationEffect(.degrees(-(angle + planetOffset * 360)))
-      .offset(x: ring.radius)
-      .rotationEffect(.degrees(planetOffset * 360))
-      .rotationEffect(.degrees(angle))
-  }
+        return ZStack {
+            Circle()
+                .stroke(DesignColor.secondary.opacity(0.08), lineWidth: 1)
+                .frame(width: ring.radius * 2, height: ring.radius * 2)
 
-  // MARK: - Models
+            ForEach(Array(ring.dots.enumerated()), id: \.offset) { _, dot in
+                ZStack {
+                    Circle()
+                        .fill(dot.color.opacity(0.4))
+                        .frame(width: dot.size + dot.size * 0.8, height: dot.size + dot.size * 0.8)
+                    Circle()
+                        .fill(dot.color.opacity(0.6))
+                        .frame(width: dot.size, height: dot.size)
+                }
+                .offset(x: ring.radius)
+                .rotationEffect(.degrees(dot.offset * 360))
+            }
+        }
+        .rotationEffect(.degrees(angle))
+    }
 
-  private struct Ring {
-    let radius: CGFloat
-    let duration: Double
-    let dots: [OrbitDot]
-  }
+    // MARK: - Device Planet
 
-  private struct OrbitDot {
-    let offset: Double
-    let size: CGFloat
-    let color: Color
-  }
+    private func devicePlanet(name: String, elapsed: TimeInterval) -> some View {
+        let ring = Self.rings[1]  // middle ring
+        let progress = elapsed / abs(ring.duration)
+        let direction: Double = ring.duration > 0 ? 1 : -1
+        let angle = progress * 360 * direction
+        let planetOffset = 0.45
 
-  private static var rings: [Ring] {
-    [
-      Ring(
-        radius: 84, duration: 12,
-        dots: [
-          OrbitDot(offset: 0.0, size: 6, color: DesignColor.accent),
-          OrbitDot(offset: 0.55, size: 4, color: DesignColor.green),
-        ]),
-      Ring(
-        radius: 110, duration: -18,
-        dots: [
-          OrbitDot(offset: 0.2, size: 5, color: DesignColor.orange),
-          OrbitDot(offset: 0.7, size: 3, color: DesignColor.accent),
-        ]),
-      Ring(
-        radius: 136, duration: 25,
-        dots: [
-          OrbitDot(offset: 0.4, size: 4, color: DesignColor.red),
-          OrbitDot(offset: 0.85, size: 3, color: DesignColor.green),
-        ]),
-    ]
-  }
+        return Text(name)
+            .font(Brand.font(size: 8))
+            .foregroundColor(DesignColor.text)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background((isConnected ? DesignColor.green : DesignColor.red).opacity(0.15))
+            .clipShape(Capsule())
+            .rotationEffect(.degrees(-(angle + planetOffset * 360)))
+            .offset(x: ring.radius)
+            .rotationEffect(.degrees(planetOffset * 360))
+            .rotationEffect(.degrees(angle))
+    }
+
+    // MARK: - Models
+
+    private struct Ring {
+        let radius: CGFloat
+        let duration: Double
+        let dots: [OrbitDot]
+    }
+
+    private struct OrbitDot {
+        let offset: Double
+        let size: CGFloat
+        let color: Color
+    }
+
+    private static var rings: [Ring] {
+        [
+            Ring(
+                radius: 84, duration: 12,
+                dots: [
+                    OrbitDot(offset: 0.0, size: 6, color: DesignColor.accent),
+                    OrbitDot(offset: 0.55, size: 4, color: DesignColor.green),
+                ]
+            ),
+            Ring(
+                radius: 110, duration: -18,
+                dots: [
+                    OrbitDot(offset: 0.2, size: 5, color: DesignColor.orange),
+                    OrbitDot(offset: 0.7, size: 3, color: DesignColor.accent),
+                ]
+            ),
+            Ring(
+                radius: 136, duration: 25,
+                dots: [
+                    OrbitDot(offset: 0.4, size: 4, color: DesignColor.red),
+                    OrbitDot(offset: 0.85, size: 3, color: DesignColor.green),
+                ]
+            ),
+        ]
+    }
 }

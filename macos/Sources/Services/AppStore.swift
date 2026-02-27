@@ -1,39 +1,37 @@
 import Combine
 import Foundation
 
-private let cat = "AppStore"
+private let logCategory = "AppStore"
 
 class AppStore: ObservableObject {
+    static let shared = AppStore()
 
-  static let shared = AppStore()
+    @Published var pairedDevice: DeviceInfo?
+    @Published var transportMethod: String = "auto"
+    @Published var launchAtLogin: Bool = false
 
-  @Published var pairedDevice: DeviceInfo?
-  @Published var transportMethod: String = "auto"
-  @Published var launchAtLogin: Bool = false
+    private let defaults = UserDefaults.standard
 
-  private let defaults = UserDefaults.standard
-
-  init() { load() }
-
-  func load() {
-    if let data = defaults.data(forKey: "pairedDevice"),
-      let device = try? JSONDecoder().decode(DeviceInfo.self, from: data)
-    {
-      pairedDevice = device
+    init() {
+        load()
     }
-    transportMethod = defaults.string(forKey: "transportMethod") ?? "auto"
-    launchAtLogin = defaults.bool(forKey: "launchAtLogin")
-    FileLogger.debug("Config loaded: transport=\(transportMethod)", category: cat)
-  }
 
-  func save() {
-    FileLogger.debug("Config saved", category: cat)
-    if let device = pairedDevice, let data = try? JSONEncoder().encode(device) {
-      defaults.set(data, forKey: "pairedDevice")
-    } else {
-      defaults.removeObject(forKey: "pairedDevice")
+    func load() {
+        pairedDevice = defaults.data(forKey: "pairedDevice")
+            .flatMap { try? JSONDecoder().decode(DeviceInfo.self, from: $0) }
+        transportMethod = defaults.string(forKey: "transportMethod") ?? "auto"
+        launchAtLogin = defaults.bool(forKey: "launchAtLogin")
+        FileLogger.debug("Config loaded: transport=\(transportMethod)", category: logCategory)
     }
-    defaults.set(transportMethod, forKey: "transportMethod")
-    defaults.set(launchAtLogin, forKey: "launchAtLogin")
-  }
+
+    func save() {
+        FileLogger.debug("Config saved", category: logCategory)
+        if let device = pairedDevice, let data = try? JSONEncoder().encode(device) {
+            defaults.set(data, forKey: "pairedDevice")
+        } else {
+            defaults.removeObject(forKey: "pairedDevice")
+        }
+        defaults.set(transportMethod, forKey: "transportMethod")
+        defaults.set(launchAtLogin, forKey: "launchAtLogin")
+    }
 }

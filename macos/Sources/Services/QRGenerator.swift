@@ -2,64 +2,74 @@ import AppKit
 import CoreImage
 
 enum QRGenerator {
+    static func generateQRCodePayload(preferredTransport: String) -> (payload: Data, seed: Data)? {
+        var seed = Data(count: 16)
+        let result = seed.withUnsafeMutableBytes {
+            SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
+        }
+        guard result == errSecSuccess else { return nil }
 
-  static func generateQrPayload(prefer: String) -> (payload: Data, seed: Data)? {
-    var seed = Data(count: 16)
-    let result = seed.withUnsafeMutableBytes {
-      SecRandomCopyBytes(kSecRandomDefault, 16, $0.baseAddress!)
+        guard let host = localIPAddress() else { return nil }
+        let payload = BuzzelProtocol.generateQRCodePayload(
+            seed: seed, host: host, preferredTransport: preferredTransport
+        )
+        return (payload, seed)
     }
-    guard result == errSecSuccess else { return nil }
 
-    guard let host = localIPAddress() else { return nil }
-    let payload = BuzzelProtocol.generateQrPayload(seed: seed, host: host, prefer: prefer)
-    return (payload, seed)
-  }
+    static func generateQRCodeMatrix(from data: Data) -> [[Bool]]? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
 
-  static func generateQRMatrix(from data: Data) -> [[Bool]]? {
-    guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("H", forKey: "inputCorrectionLevel")
 
-    filter.setValue(data, forKey: "inputMessage")
-    filter.setValue("H", forKey: "inputCorrectionLevel")
+        guard let ciImage = filter.outputImage else { return nil }
 
-    guard let ciImage = filter.outputImage else { return nil }
+        let extent = ciImage.extent
+        let width = Int(extent.width)
+        let height = Int(extent.height)
 
-    let extent = ciImage.extent
-    let width = Int(extent.width)
-    let height = Int(extent.height)
+        let bitmapRepresentation = NSBitmapImageRep(ciImage: ciImage)
+        var matrix = [[Bool]](repeating: [Bool](repeating: false, count: width), count: height)
 
-    let rep = NSBitmapImageRep(ciImage: ciImage)
-    var matrix = [[Bool]](repeating: [Bool](repeating: false, count: width), count: height)
-
-    for y in 0..<height {
-      for x in 0..<width {
-        let color = rep.colorAt(x: x, y: y)
-        let brightness = color?.brightnessComponent ?? 1.0
-        matrix[y][x] = brightness < 0.5
-      }
+        for row in 0..<height {
+            for column in 0..<width {
+                let color = bitmapRepresentation.colorAt(x: column, y: row)
+                let brightness = color?.brightnessComponent ?? 1.0
+                matrix[row][column] = brightness < 0.5
+            }
+        }
+        return matrix
     }
-    return matrix
-  }
 
-  static func localIPAddress() -> String? {
-    var address: String?
-    var ifaddr: UnsafeMutablePointer<ifaddrs>?
-    guard getifaddrs(&ifaddr) == 0, let firstAddr = ifaddr else { return nil }
-    defer { freeifaddrs(ifaddr) }
+    private static let primaryNetworkInterface = "en0"
+    private static let secondaryNetworkInterface = "en1"
 
-    for ptr in sequence(first: firstAddr, next: { $0.pointee.ifa_next }) {
-      let iface = ptr.pointee
-      guard iface.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { continue }
+    static func localIPAddress() -> String? {
+        var address: String?
+        var interfaceAddresses: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaceAddresses) == 0, let firstAddress = interfaceAddresses else {
+            return nil
+        }
+        defer { freeifaddrs(interfaceAddresses) }
 
-      let name = String(cString: iface.ifa_name)
-      guard name == "en0" || name == "en1" else { continue }
+        for pointer in sequence(first: firstAddress, next: { $0.pointee.ifa_next }) {
+            let networkInterface = pointer.pointee
+            guard networkInterface.ifa_addr.pointee.sa_family == UInt8(AF_INET) else { continue }
 
-      var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
-      getnameinfo(
-        iface.ifa_addr, socklen_t(iface.ifa_addr.pointee.sa_len),
-        &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST)
-      address = String(cString: hostname)
-      if name == "en0" { break }
+            let interfaceName = String(cString: networkInterface.ifa_name)
+            guard
+                interfaceName == primaryNetworkInterface
+                    || interfaceName == secondaryNetworkInterface
+            else { continue }
+
+            var hostname = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            getnameinfo(
+                networkInterface.ifa_addr, socklen_t(networkInterface.ifa_addr.pointee.sa_len),
+                &hostname, socklen_t(hostname.count), nil, 0, NI_NUMERICHOST
+            )
+            address = String(cString: hostname)
+            if interfaceName == primaryNetworkInterface { break }
+        }
+        return address
     }
-    return address
-  }
 }
