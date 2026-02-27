@@ -6,11 +6,6 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 import java.util.UUID
 
-/**
- * Buzzel binary protocol — signals, commands, TLV encoding.
- * See PROTOCOL.md for full specification.
- */
-
 object Signal {
     const val COMMAND: Byte = 0x00
     const val PAIR_REQUEST: Byte = 0x01
@@ -18,14 +13,14 @@ object Signal {
     const val READY: Byte = 0x03
     const val PING: Byte = 0x04
     const val PONG: Byte = 0x05
-    const val ACK: Byte = 0x06
+    const val ACKNOWLEDGMENT: Byte = 0x06
     const val GOODBYE: Byte = 0x07
     const val UNPAIR: Byte = 0x08
 }
 
-object BleUuids {
+object BluetoothServiceUUIDs {
     val SERVICE: UUID = UUID.fromString("0000bf01-0000-1000-8000-00805f9b34fb")
-    val DATA_CHAR: UUID = UUID.fromString("0000bf02-0000-1000-8000-00805f9b34fb")
+    val DATA_CHARACTERISTIC: UUID = UUID.fromString("0000bf02-0000-1000-8000-00805f9b34fb")
     val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 }
 
@@ -33,77 +28,73 @@ object Protocol {
     private const val TAG = "Protocol"
 
     const val TCP_PORT = 48155
-    const val FRAME_HEADER = 2
-    const val COMMAND_HEADER = 3 // seq(2) + cmd(1)
-    const val ATT_OVERHEAD = 3
-    const val TLV_MAX_VALUE = 255 // 1-byte Len field
-    const val WIFI_MAX_FRAME = 4096
+    const val FRAME_HEADER_SIZE = 2
+    const val COMMAND_HEADER_SIZE = 3 // sequenceNumber(2) + commandIdentifier(1)
+    const val ATTRIBUTE_PROTOCOL_OVERHEAD = 3
+    const val TAG_LENGTH_VALUE_MAXIMUM_VALUE_SIZE = 255 // 1-byte length field
+    const val WIFI_MAXIMUM_FRAME_SIZE = 4096
 
-    fun maxPayload(maxFrame: Int): Int = maxFrame - FRAME_HEADER
+    fun maximumPayloadSize(maximumFrameSize: Int): Int = maximumFrameSize - FRAME_HEADER_SIZE
 
-    fun maxCmdData(maxFrame: Int): Int = maxPayload(maxFrame) - 1 - COMMAND_HEADER
+    fun maximumCommandDataSize(maximumFrameSize: Int): Int =
+        maximumPayloadSize(maximumFrameSize) - 1 - COMMAND_HEADER_SIZE
 
-    fun maxTlvData(maxFrame: Int): Int = minOf(maxCmdData(maxFrame) - 2, TLV_MAX_VALUE)
+    fun maximumTagLengthValueDataSize(maximumFrameSize: Int): Int =
+        minOf(maximumCommandDataSize(maximumFrameSize) - 2, TAG_LENGTH_VALUE_MAXIMUM_VALUE_SIZE)
 
-    fun maxFrameForMtu(mtu: Int): Int = mtu - ATT_OVERHEAD
+    fun maximumFrameSizeForMaximumTransmissionUnit(maximumTransmissionUnit: Int): Int =
+        maximumTransmissionUnit - ATTRIBUTE_PROTOCOL_OVERHEAD
 
-    // --- QR ---
+    private const val QR_CODE_PAYLOAD_SIZE = 24
+    private const val QR_CODE_MAGIC_NUMBER = 0xBC1B
 
-    private const val QR_SIZE = 24
-    private const val QR_MAGIC = 0xBC1B
-
-    data class QrPayload(
+    data class QRCodePayload(
         val seed: ByteArray,
         val host: String,
-        val prefer: String,
+        val preferredTransport: String,
     )
 
-    fun parseQr(raw: ByteArray): QrPayload? {
-        if (raw.size != QR_SIZE) {
+    fun parseQRCodePayload(raw: ByteArray): QRCodePayload? {
+        if (raw.size != QR_CODE_PAYLOAD_SIZE) {
             FileLogger.w(TAG, "QR: invalid size ${raw.size}")
             return null
         }
-        val buf = ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN)
-        val magic = buf.short.toInt() and 0xFFFF
-        if (magic != QR_MAGIC) {
-            FileLogger.w(TAG, "QR: invalid magic 0x${magic.toString(16)}")
+        val buffer = ByteBuffer.wrap(raw).order(ByteOrder.BIG_ENDIAN)
+        val magicNumber = buffer.short.toInt() and 0xFFFF
+        if (magicNumber != QR_CODE_MAGIC_NUMBER) {
+            FileLogger.w(TAG, "QR: invalid magic 0x${magicNumber.toString(16)}")
             return null
         }
         val seed = ByteArray(16)
-        buf.get(seed)
+        buffer.get(seed)
         val hostBytes = ByteArray(4)
-        buf.get(hostBytes)
+        buffer.get(hostBytes)
         val host = hostBytes.joinToString(".") { (it.toInt() and 0xFF).toString() }
-        val prefer = if (buf.get().toInt() == 0x01) "ble" else "wifi"
-        // skip reserved byte
-        return QrPayload(seed, host, prefer)
+        val preferredTransport = if (buffer.get().toInt() == 0x01) "ble" else "wifi"
+        return QRCodePayload(seed, host, preferredTransport)
     }
 
-    fun deriveSessionId(seed: ByteArray): String {
-        val hash = sha256(seed)
-        // UUID v5 format from first 16 bytes
-        val buf = ByteBuffer.wrap(hash, 0, 16)
-        val msb = buf.long
-        val lsb = buf.long
-        return UUID(msb, lsb).toString().uppercase()
+    fun deriveSessionIdentifier(seed: ByteArray): String {
+        val hash = computeSHA256(seed)
+        val buffer = ByteBuffer.wrap(hash, 0, 16)
+        val mostSignificantBits = buffer.long
+        val leastSignificantBits = buffer.long
+        return UUID(mostSignificantBits, leastSignificantBits).toString().uppercase()
     }
 
     fun derivePairingCode(seed: ByteArray): String {
         val input = seed + "code".toByteArray(Charsets.UTF_8)
-        val hash = sha256(input)
-        // first 6 digits
-        val num =
+        val hash = computeSHA256(input)
+        val numericValue =
             ByteBuffer
                 .wrap(hash, 0, 4)
                 .order(ByteOrder.BIG_ENDIAN)
                 .int
                 .toLong() and 0xFFFFFFFFL
-        return (num % 1_000_000).toString().padStart(6, '0')
+        return (numericValue % 1_000_000).toString().padStart(6, '0')
     }
 
-    private fun sha256(data: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(data)
-
-    // --- Signals ---
+    private fun computeSHA256(data: ByteArray): ByteArray = MessageDigest.getInstance("SHA-256").digest(data)
 
     fun createPing(): ByteArray = byteArrayOf(Signal.PING)
 
@@ -133,35 +124,32 @@ object Protocol {
             reason,
         )
 
-    fun createAck(seq: Int): ByteArray {
-        val buf = ByteBuffer.allocate(3).order(ByteOrder.BIG_ENDIAN)
-        buf.put(Signal.ACK)
-        buf.putShort(seq.toShort())
-        return buf.array()
+    fun createAcknowledgment(sequenceNumber: Int): ByteArray {
+        val buffer = ByteBuffer.allocate(3).order(ByteOrder.BIG_ENDIAN)
+        buffer.put(Signal.ACKNOWLEDGMENT)
+        buffer.putShort(sequenceNumber.toShort())
+        return buffer.array()
     }
 
-    fun parseSignalId(payload: ByteArray): Byte {
+    fun parseSignalIdentifier(payload: ByteArray): Byte {
         if (payload.isEmpty()) return -1
         return payload[0]
     }
 
     fun parsePairRequestCode(payload: ByteArray): String? {
-        // payload: [0x01][code 6B]
         if (payload.size < 7 || payload[0] != Signal.PAIR_REQUEST) return null
         return String(payload, 1, 6, Charsets.US_ASCII)
     }
 
     fun parsePairResponse(payload: ByteArray): Pair<Boolean, Byte>? {
-        // payload: [0x02][accepted 1B][reason 1B]
         if (payload.size < 3 || payload[0] != Signal.PAIR_RESPONSE) return null
         val accepted = payload[1] == 0x01.toByte()
         val reason = payload[2]
         return Pair(accepted, reason)
     }
 
-    fun parseAckSeq(payload: ByteArray): Int? {
-        // payload: [0x06][seq 2B]
-        if (payload.size < 3 || payload[0] != Signal.ACK) return null
+    fun parseAcknowledgmentSequenceNumber(payload: ByteArray): Int? {
+        if (payload.size < 3 || payload[0] != Signal.ACKNOWLEDGMENT) return null
         return ByteBuffer
             .wrap(payload, 1, 2)
             .order(ByteOrder.BIG_ENDIAN)
@@ -169,102 +157,97 @@ object Protocol {
             .toInt() and 0xFFFF
     }
 
-    // --- Commands ---
-
     fun createCommand(
-        cmd: Byte,
-        seq: Int,
-        tlvData: ByteArray = ByteArray(0),
-        maxTlvData: Int = TLV_MAX_VALUE,
+        commandIdentifier: Byte,
+        sequenceNumber: Int,
+        tagLengthValueData: ByteArray = ByteArray(0),
+        maximumTagLengthValueDataSize: Int = TAG_LENGTH_VALUE_MAXIMUM_VALUE_SIZE,
     ): ByteArray {
-        val dataLen = minOf(tlvData.size, maxTlvData)
-        val buf = ByteBuffer.allocate(1 + COMMAND_HEADER + dataLen).order(ByteOrder.BIG_ENDIAN)
-        buf.put(Signal.COMMAND)
-        buf.putShort(seq.toShort())
-        buf.put(cmd)
-        if (dataLen > 0) buf.put(tlvData, 0, dataLen)
-        return buf.array()
+        val dataLength = minOf(tagLengthValueData.size, maximumTagLengthValueDataSize)
+        val buffer = ByteBuffer.allocate(1 + COMMAND_HEADER_SIZE + dataLength).order(ByteOrder.BIG_ENDIAN)
+        buffer.put(Signal.COMMAND)
+        buffer.putShort(sequenceNumber.toShort())
+        buffer.put(commandIdentifier)
+        if (dataLength > 0) buffer.put(tagLengthValueData, 0, dataLength)
+        return buffer.array()
     }
 
     data class Command(
-        val cmd: Byte,
-        val seq: Int,
+        val commandIdentifier: Byte,
+        val sequenceNumber: Int,
         val data: ByteArray,
     )
 
     fun parseCommand(payload: ByteArray): Command? {
-        // payload: [0x00][seq 2B][cmd 1B][TLV 0-NB]
         if (payload.size < 4 || payload[0] != Signal.COMMAND) return null
-        val seq =
+        val sequenceNumber =
             ByteBuffer
                 .wrap(payload, 1, 2)
                 .order(ByteOrder.BIG_ENDIAN)
                 .short
                 .toInt() and 0xFFFF
-        val cmd = payload[3]
+        val commandIdentifier = payload[3]
         val data = if (payload.size > 4) payload.copyOfRange(4, payload.size) else ByteArray(0)
-        return Command(cmd, seq, data)
+        return Command(commandIdentifier, sequenceNumber, data)
     }
 
-    // --- TLV ---
-
-    fun tlvEncode(
+    fun encodeTagLengthValue(
         tag: Byte,
         value: ByteArray,
     ): ByteArray {
-        val len = minOf(value.size, TLV_MAX_VALUE)
-        val result = ByteArray(2 + len)
+        val length = minOf(value.size, TAG_LENGTH_VALUE_MAXIMUM_VALUE_SIZE)
+        val result = ByteArray(2 + length)
         result[0] = tag
-        result[1] = len.toByte()
-        System.arraycopy(value, 0, result, 2, len)
+        result[1] = length.toByte()
+        System.arraycopy(value, 0, result, 2, length)
         return result
     }
 
-    fun tlvEncodeString(
+    fun encodeTagLengthValueString(
         tag: Byte,
         value: String,
-    ): ByteArray = tlvEncode(tag, value.toByteArray(Charsets.UTF_8))
+    ): ByteArray = encodeTagLengthValue(tag, value.toByteArray(Charsets.UTF_8))
 
-    fun tlvEncodeInt(
+    fun encodeTagLengthValueInteger(
         tag: Byte,
         value: Int,
     ): ByteArray {
-        val buf = ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN).putInt(value)
-        return tlvEncode(tag, buf.array())
+        val buffer = ByteBuffer.allocate(4).order(ByteOrder.BIG_ENDIAN).putInt(value)
+        return encodeTagLengthValue(tag, buffer.array())
     }
 
-    fun tlvEncodeByte(
+    fun encodeTagLengthValueByte(
         tag: Byte,
         value: Byte,
-    ): ByteArray = tlvEncode(tag, byteArrayOf(value))
+    ): ByteArray = encodeTagLengthValue(tag, byteArrayOf(value))
 
-    data class TlvField(
+    data class TagLengthValueField(
         val tag: Byte,
         val value: ByteArray,
     )
 
-    fun tlvDecode(data: ByteArray): List<TlvField> {
-        val fields = mutableListOf<TlvField>()
+    fun decodeTagLengthValue(data: ByteArray): List<TagLengthValueField> {
+        val fields = mutableListOf<TagLengthValueField>()
         var offset = 0
         while (offset + 2 <= data.size) {
             val tag = data[offset]
-            val len = data[offset + 1].toInt() and 0xFF
+            val length = data[offset + 1].toInt() and 0xFF
             offset += 2
-            if (offset + len > data.size) break
-            val value = data.copyOfRange(offset, offset + len)
-            fields.add(TlvField(tag, value))
-            offset += len
+            if (offset + length > data.size) break
+            val value = data.copyOfRange(offset, offset + length)
+            fields.add(TagLengthValueField(tag, value))
+            offset += length
         }
         return fields
     }
 
-    fun tlvGetString(
-        fields: List<TlvField>,
+    fun getTagLengthValueString(
+        fields: List<TagLengthValueField>,
         tag: Byte,
     ): String? = fields.firstOrNull { it.tag == tag }?.value?.toString(Charsets.UTF_8)
 
-    fun tlvGetInt(
-        fields: List<TlvField>,
+    fun getTagLengthValueInteger(
+        fields: List<TagLengthValueField>,
         tag: Byte,
     ): Int? {
         val field = fields.firstOrNull { it.tag == tag } ?: return null
@@ -272,8 +255,8 @@ object Protocol {
         return ByteBuffer.wrap(field.value).order(ByteOrder.BIG_ENDIAN).int
     }
 
-    fun tlvGetByte(
-        fields: List<TlvField>,
+    fun getTagLengthValueByte(
+        fields: List<TagLengthValueField>,
         tag: Byte,
     ): Byte? {
         val field = fields.firstOrNull { it.tag == tag } ?: return null

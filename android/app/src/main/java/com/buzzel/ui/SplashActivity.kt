@@ -29,7 +29,7 @@ class SplashActivity : Activity() {
         AppColors.resolve(this)
 
         val root = FrameLayout(this)
-        val lp =
+        val layoutParams =
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -40,11 +40,11 @@ class SplashActivity : Activity() {
                 setImageResource(R.drawable.mesh)
                 scaleType = ImageView.ScaleType.CENTER_CROP
             },
-            lp,
+            layoutParams,
         )
 
         logoView = LogoDrawView(this) { onDrawDone() }
-        root.addView(logoView, lp)
+        root.addView(logoView, layoutParams)
 
         setContentView(root)
 
@@ -65,37 +65,32 @@ class SplashActivity : Activity() {
             finish()
             @Suppress("DEPRECATION")
             overridePendingTransition(R.anim.stay, R.anim.slide_down_out)
-        }, DELAY_AFTER_MS)
+        }, DELAY_AFTER_MILLISECONDS)
     }
 
     companion object {
-        const val DELAY_BEFORE_MS = 0L
-        const val DELAY_AFTER_MS = 500L
+        const val DELAY_BEFORE_MILLISECONDS = 0L
+        const val DELAY_AFTER_MILLISECONDS = 500L
     }
-
-    // --- Logo draw animation view ---
 
     class LogoDrawView(
         context: Context,
         private val onDone: () -> Unit,
     ) : View(context) {
         companion object {
-            // Bar timings
-            const val BAR1_DUR = 250L
-            const val BAR2_DUR = 200L
-            const val BAR3_DUR = 250L
-            const val BAR2_BEGIN = 200L
-            const val BAR3_BEGIN = 350L
+            const val BAR_1_DURATION = 250L
+            const val BAR_2_DURATION = 200L
+            const val BAR_3_DURATION = 250L
+            const val BAR_2_BEGIN = 200L
+            const val BAR_3_BEGIN = 350L
 
-            // Bar path data
-            const val BAR1_PATH = "M410.094 160.783H17.871l102.254-160.79h391.868z"
-            const val BAR2_PATH = "M305.464 336.398H108.914l101.529-160.79h191.956Z"
-            const val BAR3_PATH = "M391.781 512.0H0.0l100.601-160.79h392.506z"
+            const val BAR_1_PATH = "M410.094 160.783H17.871l102.254-160.79h391.868z"
+            const val BAR_2_PATH = "M305.464 336.398H108.914l101.529-160.79h191.956Z"
+            const val BAR_3_PATH = "M391.781 512.0H0.0l100.601-160.79h392.506z"
 
-            // Easing curves
-            private val BAR1_INTERP = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
-            private val BAR2_INTERP = PathInterpolator(0.42f, 0f, 0.58f, 1f)
-            private val BAR3_INTERP = PathInterpolator(0.25f, 0.1f, 0.6f, 1f)
+            private val BAR_1_INTERPOLATOR = PathInterpolator(0.25f, 0.1f, 0.25f, 1f)
+            private val BAR_2_INTERPOLATOR = PathInterpolator(0.42f, 0f, 0.58f, 1f)
+            private val BAR_3_INTERPOLATOR = PathInterpolator(0.25f, 0.1f, 0.6f, 1f)
         }
 
         private data class Bar(
@@ -137,9 +132,9 @@ class SplashActivity : Activity() {
 
             bars.clear()
             for ((pathData, fromRight) in listOf(
-                BAR1_PATH to false,
-                BAR2_PATH to true,
-                BAR3_PATH to false,
+                BAR_1_PATH to false,
+                BAR_2_PATH to true,
+                BAR_3_PATH to false,
             )) {
                 val path = PathParser.createPathFromPathData(pathData)
                 path.transform(matrix)
@@ -150,16 +145,16 @@ class SplashActivity : Activity() {
 
             if (!animatorStarted) {
                 animatorStarted = true
-                postDelayed({ startDrawAnimation() }, DELAY_BEFORE_MS)
+                postDelayed({ startDrawAnimation() }, DELAY_BEFORE_MILLISECONDS)
             }
         }
 
         private fun startDrawAnimation() {
-            animateBar(0, BAR1_DUR, BAR1_INTERP, 0L)
-            animateBar(1, BAR2_DUR, BAR2_INTERP, BAR2_BEGIN)
-            animateBar(2, BAR3_DUR, BAR3_INTERP, BAR3_BEGIN)
+            animateBar(0, BAR_1_DURATION, BAR_1_INTERPOLATOR, 0L)
+            animateBar(1, BAR_2_DURATION, BAR_2_INTERPOLATOR, BAR_2_BEGIN)
+            animateBar(2, BAR_3_DURATION, BAR_3_INTERPOLATOR, BAR_3_BEGIN)
 
-            val drawEnd = BAR3_BEGIN + BAR3_DUR + 300L
+            val drawEnd = BAR_3_BEGIN + BAR_3_DURATION + 300L
             postDelayed({ onDone() }, drawEnd)
         }
 
@@ -187,20 +182,20 @@ class SplashActivity : Activity() {
             super.onDraw(canvas)
             for (bar in bars) {
                 if (bar.drawProgress <= 0f) continue
-                val b = bar.bounds
+                val bounds = bar.bounds
                 val clipLeft: Float
                 val clipRight: Float
                 if (bar.fromRight) {
-                    clipRight = b.right
-                    clipLeft = b.right - b.width() * bar.drawProgress
+                    clipRight = bounds.right
+                    clipLeft = bounds.right - bounds.width() * bar.drawProgress
                 } else {
-                    clipLeft = b.left
-                    clipRight = b.left + b.width() * bar.drawProgress
+                    clipLeft = bounds.left
+                    clipRight = bounds.left + bounds.width() * bar.drawProgress
                 }
                 if (clipLeft >= clipRight) continue
                 canvas.save()
                 clipPath.reset()
-                clipPath.addRect(clipLeft, b.top, clipRight, b.bottom, Path.Direction.CW)
+                clipPath.addRect(clipLeft, bounds.top, clipRight, bounds.bottom, Path.Direction.CW)
                 canvas.clipPath(clipPath)
                 canvas.drawPath(bar.path, paint)
                 canvas.restore()

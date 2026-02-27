@@ -101,7 +101,7 @@ class BuzzelApp : Application() {
                 description = "Buzzel background service"
                 setShowBadge(false)
             }
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(channel)
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.createNotificationChannel(channel)
     }
 }

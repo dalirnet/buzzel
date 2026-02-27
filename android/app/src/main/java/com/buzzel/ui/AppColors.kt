@@ -96,13 +96,15 @@ object AppColors {
         attr: Int,
         fallback: Int,
     ): Int {
-        val tv = TypedValue()
-        return if (context.theme.resolveAttribute(attr, tv, true)) {
-            if (tv.type >= TypedValue.TYPE_FIRST_COLOR_INT && tv.type <= TypedValue.TYPE_LAST_COLOR_INT) {
-                tv.data
+        val typedValue = TypedValue()
+        return if (context.theme.resolveAttribute(attr, typedValue, true)) {
+            if (typedValue.type >= TypedValue.TYPE_FIRST_COLOR_INT &&
+                typedValue.type <= TypedValue.TYPE_LAST_COLOR_INT
+            ) {
+                typedValue.data
             } else {
                 try {
-                    context.getColor(tv.resourceId)
+                    context.getColor(typedValue.resourceId)
                 } catch (_: Exception) {
                     fallback
                 }

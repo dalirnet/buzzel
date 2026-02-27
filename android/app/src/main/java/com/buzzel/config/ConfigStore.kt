@@ -49,10 +49,10 @@ class ConfigStore(
             prefs.edit().putString(KEY_MAC_HOST, value).apply()
         }
 
-    var preferTransport: String?
+    var preferredTransport: String?
         get() = prefs.getString(KEY_PREFER_TRANSPORT, "auto")
         set(value) {
-            FileLogger.d(TAG, "Set preferTransport=$value")
+            FileLogger.d(TAG, "Set preferredTransport=$value")
             prefs.edit().putString(KEY_PREFER_TRANSPORT, value).apply()
         }
 

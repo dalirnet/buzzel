@@ -30,10 +30,10 @@ class BuzzelService : Service() {
     companion object {
         private const val TAG = "BuzzelService"
         private const val NOTIFICATION_ID = 1
-        private const val PING_INTERVAL_MS = 10_000L
-        private const val PONG_TIMEOUT_MS = 5_000L
-        private const val HANDSHAKE_TIMEOUT_MS = 30_000L
-        private const val FAILOVER_DELAY_MS = 10_000L
+        private const val PING_INTERVAL_MILLISECONDS = 10_000L
+        private const val PONG_TIMEOUT_MILLISECONDS = 5_000L
+        private const val HANDSHAKE_TIMEOUT_MILLISECONDS = 30_000L
+        private const val FAILOVER_DELAY_MILLISECONDS = 10_000L
         const val ACTION_SOFT_DISCONNECT = "com.buzzel.action.SOFT_DISCONNECT"
         const val ACTION_UNPAIR = "com.buzzel.action.UNPAIR"
     }
@@ -51,9 +51,8 @@ class BuzzelService : Service() {
     private var failoverRunnable: Runnable? = null
     private val deviceName = "Mac"
 
-    // Reliable delivery
-    private var nextSeq = 0
-    private var pendingAckSeq: Int? = null
+    private var nextSequenceNumber = 0
+    private var pendingAcknowledgmentSequenceNumber: Int? = null
     private var pendingRetries = 0
     private var retryPayload: ByteArray? = null
     private var retryRunnable: Runnable? = null
@@ -68,9 +67,8 @@ class BuzzelService : Service() {
         object : Runnable {
             override fun run() {
                 if (state != ConnectionState.ACTIVE) return
-                // If we sent a ping and no pong came back within PONG_TIMEOUT_MS, disconnect.
                 if (lastPingSentTime > 0 && lastPongTime < lastPingSentTime &&
-                    System.currentTimeMillis() - lastPingSentTime > PONG_TIMEOUT_MS
+                    System.currentTimeMillis() - lastPingSentTime > PONG_TIMEOUT_MILLISECONDS
                 ) {
                     FileLogger.w(TAG, "Pong timeout")
                     app.appendLogEntry(
@@ -79,7 +77,7 @@ class BuzzelService : Service() {
                             message = "Pong timeout",
                             direction = LogDirection.LOCAL,
                             status = LogStatus.FAILED,
-                            error = "No pong for ${PONG_TIMEOUT_MS / 1000}s",
+                            error = "No pong for ${PONG_TIMEOUT_MILLISECONDS / 1000}s",
                         ),
                     )
                     handleDisconnect()
@@ -88,20 +86,17 @@ class BuzzelService : Service() {
                 FileLogger.d(TAG, "Sending ping")
                 lastPingSentTime = System.currentTimeMillis()
                 transport.send(Protocol.createPing())
-                handler.postDelayed(this, PING_INTERVAL_MS)
+                handler.postDelayed(this, PING_INTERVAL_MILLISECONDS)
             }
         }
 
-    // region Failover
-
     private fun resolvePreferredTransport(): String {
-        val pref = app.configStore.preferTransport ?: "auto"
-        if (pref == "wifi" || pref == "ble") return pref
-        // "auto": check WiFi connectivity
-        val cm = getSystemService(ConnectivityManager::class.java)
-        val net = cm?.activeNetwork
-        val caps = net?.let { cm.getNetworkCapabilities(it) }
-        val hasWifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        val preference = app.configStore.preferredTransport ?: "auto"
+        if (preference == "wifi" || preference == "ble") return preference
+        val connectivityManager = getSystemService(ConnectivityManager::class.java)
+        val activeNetwork = connectivityManager?.activeNetwork
+        val capabilities = activeNetwork?.let { connectivityManager.getNetworkCapabilities(it) }
+        val hasWifi = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
         FileLogger.i(TAG, "Auto-detect: WiFi ${if (hasWifi) "available" else "unavailable"}")
         return if (hasWifi) "wifi" else "ble"
     }
@@ -128,8 +123,11 @@ class BuzzelService : Service() {
         }
         val preferred = failoverSteps[failoverIndex % failoverSteps.size]
         failoverGeneration++
-        val gen = failoverGeneration
-        FileLogger.i(TAG, "Failover step $failoverIndex: trying $preferred (gen=$gen, timeout=${FAILOVER_DELAY_MS / 1000}s)")
+        val generation = failoverGeneration
+        FileLogger.i(
+            TAG,
+            "Failover step $failoverIndex: trying $preferred (gen=$generation, timeout=${FAILOVER_DELAY_MILLISECONDS / 1000}s)",
+        )
         transport.stopAll()
         transitionTo(ConnectionState.CONNECTING)
         app.connectingTransport = if (preferred == "wifi") "WiFi" else "BLE"
@@ -157,12 +155,15 @@ class BuzzelService : Service() {
         val runnable =
             Runnable {
                 if (state == ConnectionState.CONNECTING) {
-                    FileLogger.i(TAG, "Failover timeout: $preferred did not connect in ${FAILOVER_DELAY_MS / 1000}s, advancing")
+                    FileLogger.i(
+                        TAG,
+                        "Failover timeout: $preferred did not connect in ${FAILOVER_DELAY_MILLISECONDS / 1000}s, advancing",
+                    )
                     advanceFailover()
                 }
             }
         failoverRunnable = runnable
-        handler.postDelayed(runnable, FAILOVER_DELAY_MS)
+        handler.postDelayed(runnable, FAILOVER_DELAY_MILLISECONDS)
     }
 
     private fun advanceFailover() {
@@ -179,7 +180,6 @@ class BuzzelService : Service() {
     private fun handleDisconnect() {
         transitionTo(ConnectionState.IDLE)
 
-        // Only reconnect when we have valid pairing data
         val hasPairingContext = app.configStore.pairingCode != null
         if (!hasPairingContext) {
             FileLogger.i(TAG, "No pairing context — not reconnecting, stopping service")
@@ -200,21 +200,19 @@ class BuzzelService : Service() {
         startFailover()
     }
 
-    // endregion
-
-    // region State Machine
-
     private fun transitionTo(newState: ConnectionState) {
         val oldState = state
         if (oldState == newState && newState != ConnectionState.ACTIVE) return
         FileLogger.i(TAG, "State: $oldState → $newState")
         state = newState
 
-        // Set properties BEFORE notifying listeners so UI sees the correct values
         when (newState) {
             ConnectionState.IDLE -> {
                 app.isDeviceConnected = false
                 app.connectedDeviceName = null
+                handler.removeCallbacks(pingRunnable)
+                cancelHandshakeTimeout()
+                cancelRetry()
             }
 
             ConnectionState.CONNECTING -> {
@@ -223,54 +221,38 @@ class BuzzelService : Service() {
 
             ConnectionState.HANDSHAKING -> {
                 app.isDeviceConnected = false
+                startHandshakeTimeout()
             }
 
             ConnectionState.ACTIVE -> {
                 app.isDeviceConnected = true
                 app.hasBeenConnected = true
                 app.connectedDeviceName = deviceName
-            }
-        }
-
-        // Notify listeners — triggers UI refresh
-        app.serviceConnectionState = newState
-
-        // Side effects after notification
-        when (newState) {
-            ConnectionState.IDLE -> {
-                handler.removeCallbacks(pingRunnable)
-                cancelHandshakeTimeout()
-                cancelRetry()
-            }
-
-            ConnectionState.CONNECTING -> {}
-
-            ConnectionState.HANDSHAKING -> {
-                startHandshakeTimeout()
-            }
-
-            ConnectionState.ACTIVE -> {
                 cancelHandshakeTimeout()
                 cancelFailover()
                 lastPongTime = System.currentTimeMillis()
                 lastPingSentTime = 0L
                 reconnectAttempts = 0
                 handler.removeCallbacks(pingRunnable)
-                handler.postDelayed(pingRunnable, PING_INTERVAL_MS)
-                // Promote to foreground — notification appears only when connected
+                handler.postDelayed(pingRunnable, PING_INTERVAL_MILLISECONDS)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                    startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+                    startForeground(
+                        NOTIFICATION_ID,
+                        buildNotification(),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+                    )
                 } else {
                     startForeground(NOTIFICATION_ID, buildNotification())
                 }
             }
         }
 
+        app.serviceConnectionState = newState
+
         if (newState != ConnectionState.CONNECTING) {
             app.connectingTransport = null
         }
         if (newState != ConnectionState.ACTIVE) {
-            // Demote from foreground — dismisses the notification
             @Suppress("DEPRECATION")
             stopForeground(true)
         }
@@ -295,7 +277,7 @@ class BuzzelService : Service() {
                 }
             }
         handshakeTimeoutRunnable = runnable
-        handler.postDelayed(runnable, HANDSHAKE_TIMEOUT_MS)
+        handler.postDelayed(runnable, HANDSHAKE_TIMEOUT_MILLISECONDS)
     }
 
     private fun cancelHandshakeTimeout() {
@@ -303,18 +285,14 @@ class BuzzelService : Service() {
         handshakeTimeoutRunnable = null
     }
 
-    // endregion
-
-    // region Reliable Delivery
-
     fun sendCommand(
-        cmd: Byte,
-        tlvData: ByteArray = ByteArray(0),
+        commandIdentifier: Byte,
+        tagLengthValueData: ByteArray = ByteArray(0),
     ) {
-        val seq = nextSeq++
-        val payload = Protocol.createCommand(cmd, seq, tlvData)
+        val sequenceNumber = nextSequenceNumber++
+        val payload = Protocol.createCommand(commandIdentifier, sequenceNumber, tagLengthValueData)
         retryPayload = payload
-        pendingAckSeq = seq
+        pendingAcknowledgmentSequenceNumber = sequenceNumber
         pendingRetries = 0
         transport.send(payload)
         startRetryTimer()
@@ -324,9 +302,9 @@ class BuzzelService : Service() {
         cancelRetry()
         val runnable =
             Runnable {
-                if (pendingAckSeq != null && pendingRetries < 3) {
+                if (pendingAcknowledgmentSequenceNumber != null && pendingRetries < 3) {
                     pendingRetries++
-                    FileLogger.w(TAG, "Retry command seq=$pendingAckSeq, attempt=$pendingRetries")
+                    FileLogger.w(TAG, "Retry command seq=$pendingAcknowledgmentSequenceNumber, attempt=$pendingRetries")
                     retryPayload?.let { transport.send(it) }
                     startRetryTimer()
                 } else if (pendingRetries >= 3) {
@@ -343,10 +321,6 @@ class BuzzelService : Service() {
         retryRunnable = null
     }
 
-    // endregion
-
-    // region Lifecycle
-
     override fun onCreate() {
         super.onCreate()
         FileLogger.i(TAG, "Service created")
@@ -356,9 +330,7 @@ class BuzzelService : Service() {
                 context = this,
                 onMessageReceived = { data -> handler.post { handleMessage(data) } },
                 onConnectionChanged = { connected ->
-                    // Callbacks may fire from background threads; marshal to main handler.
-                    // Capture generation at callback time to detect stale transport callbacks.
-                    val gen = failoverGeneration
+                    val generation = failoverGeneration
                     handler.post {
                         val label =
                             when (transport.activeTransport) {
@@ -367,11 +339,14 @@ class BuzzelService : Service() {
                                 TransportManager.ActiveTransport.NONE -> ""
                             }
                         if (connected) {
-                            if (gen != failoverGeneration) {
-                                FileLogger.d(TAG, "Ignoring stale connect (gen=$gen, current=$failoverGeneration)")
+                            if (generation != failoverGeneration) {
+                                FileLogger.d(
+                                    TAG,
+                                    "Ignoring stale connect (gen=$generation, current=$failoverGeneration)",
+                                )
                                 return@post
                             }
-                            FileLogger.i(TAG, "$label connected (gen=$gen)")
+                            FileLogger.i(TAG, "$label connected (gen=$generation)")
                             app.connectedTransport = label.ifEmpty { null }
                             app.appendLogEntry(
                                 LogEntry(
@@ -382,23 +357,23 @@ class BuzzelService : Service() {
                             transitionTo(ConnectionState.HANDSHAKING)
                             val code = app.configStore.pairingCode
                             if (code != null && app.configStore.sessionId != null) {
-                                // Already paired — reconnection: send ready
                                 FileLogger.d(TAG, "Sending ready signal (reconnection)")
                                 transport.send(Protocol.createReady())
                             } else if (code != null) {
-                                // First pairing: send pair.request
                                 FileLogger.d(TAG, "Sending pair request (first pairing)")
                                 transport.send(Protocol.createPairRequest(code))
                             } else {
                                 FileLogger.e(TAG, "Connected but no pairing code available")
                             }
                         } else {
-                            // Ignore callbacks from a previous failover generation
-                            if (gen != failoverGeneration) {
-                                FileLogger.d(TAG, "Ignoring stale disconnect (gen=$gen, current=$failoverGeneration)")
+                            if (generation != failoverGeneration) {
+                                FileLogger.d(
+                                    TAG,
+                                    "Ignoring stale disconnect (gen=$generation, current=$failoverGeneration)",
+                                )
                                 return@post
                             }
-                            FileLogger.i(TAG, "$label disconnected (state=$state, gen=$gen)")
+                            FileLogger.i(TAG, "$label disconnected (state=$state, gen=$generation)")
                             app.connectedTransport = null
                             app.appendLogEntry(
                                 LogEntry(
@@ -451,7 +426,6 @@ class BuzzelService : Service() {
             started = true
             startFailover()
         } else if (state == ConnectionState.IDLE && app.configStore.pairingCode != null) {
-            // Service already running but idle — user tapped power to reconnect
             FileLogger.i(TAG, "Already started but idle — restarting failover")
             startFailover()
         }
@@ -460,32 +434,25 @@ class BuzzelService : Service() {
 
     private fun performSoftDisconnect() {
         FileLogger.i(TAG, "Performing soft disconnect (keep pairing)")
-        val wasActive = state == ConnectionState.ACTIVE || state == ConnectionState.HANDSHAKING
-        transitionTo(ConnectionState.IDLE)
-        handler.removeCallbacks(pingRunnable)
-        cancelHandshakeTimeout()
-        cancelFailover()
-        cancelRetry()
-        if (wasActive) {
-            transport.sendAndStop(Protocol.createGoodbye())
-        } else {
-            transport.stopAll()
-        }
-        stopSelf()
+        shutdownWithSignal(Protocol.createGoodbye())
     }
 
     private fun performUnpair() {
         FileLogger.i(TAG, "Performing unpair (clear pairing)")
-        val wasActive = state == ConnectionState.ACTIVE || state == ConnectionState.HANDSHAKING
         app.hasBeenConnected = false
         app.configStore.clearPairing()
+        shutdownWithSignal(Protocol.createUnpair())
+    }
+
+    private fun shutdownWithSignal(finalSignal: ByteArray) {
+        val wasActive = state == ConnectionState.ACTIVE || state == ConnectionState.HANDSHAKING
         transitionTo(ConnectionState.IDLE)
         handler.removeCallbacks(pingRunnable)
         cancelHandshakeTimeout()
         cancelFailover()
         cancelRetry()
         if (wasActive) {
-            transport.sendAndStop(Protocol.createUnpair())
+            transport.sendAndStop(finalSignal)
         } else {
             transport.stopAll()
         }
@@ -514,10 +481,6 @@ class BuzzelService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    // endregion
-
-    // region Message Handling
 
     private fun handleMessage(payload: ByteArray) {
         if (payload.isEmpty()) return
@@ -581,7 +544,13 @@ class BuzzelService : Service() {
 
             Signal.PAIR_RESPONSE -> {
                 val result = Protocol.parsePairResponse(payload)
-                FileLogger.i(TAG, "Pair response: accepted=${result?.first}, reason=0x${String.format("%02x", result?.second ?: 0)}")
+                FileLogger.i(
+                    TAG,
+                    "Pair response: accepted=${result?.first}, reason=0x${String.format(
+                        "%02x",
+                        result?.second ?: 0,
+                    )}",
+                )
                 if (result != null && result.first) {
                     app.configStore.completePairing()
                     app.appendLogEntry(
@@ -606,35 +575,29 @@ class BuzzelService : Service() {
                 }
             }
 
-            Signal.ACK -> {
-                val seq = Protocol.parseAckSeq(payload)
-                if (seq != null && seq == pendingAckSeq) {
-                    FileLogger.d(TAG, "Ack received for seq=$seq")
-                    pendingAckSeq = null
+            Signal.ACKNOWLEDGMENT -> {
+                val sequenceNumber = Protocol.parseAcknowledgmentSequenceNumber(payload)
+                if (sequenceNumber != null && sequenceNumber == pendingAcknowledgmentSequenceNumber) {
+                    FileLogger.d(TAG, "Acknowledgment received for seq=$sequenceNumber")
+                    pendingAcknowledgmentSequenceNumber = null
                     retryPayload = null
                     cancelRetry()
                 }
             }
 
             Signal.COMMAND -> {
-                val cmd = Protocol.parseCommand(payload)
-                if (cmd != null) {
-                    // Ack immediately
-                    transport.send(Protocol.createAck(cmd.seq))
-                    handleCommand(cmd)
+                val command = Protocol.parseCommand(payload)
+                if (command != null) {
+                    transport.send(Protocol.createAcknowledgment(command.sequenceNumber))
+                    handleCommand(command)
                 }
             }
         }
     }
 
-    private fun handleCommand(cmd: Protocol.Command) {
-        FileLogger.d(TAG, "Command 0x${String.format("%02x", cmd.cmd)} seq=${cmd.seq}")
-        // All command IDs reserved — dispatch as features are added
+    private fun handleCommand(command: Protocol.Command) {
+        FileLogger.d(TAG, "Command 0x${String.format("%02x", command.commandIdentifier)} seq=${command.sequenceNumber}")
     }
-
-    // endregion
-
-    // region Notification
 
     private fun buildNotification(): Notification {
         val intent = Intent(this, MainActivity::class.java)
@@ -649,6 +612,4 @@ class BuzzelService : Service() {
             .setSilent(true)
             .build()
     }
-
-    // endregion
 }

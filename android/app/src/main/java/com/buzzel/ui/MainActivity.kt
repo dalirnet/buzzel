@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
+import android.graphics.Matrix
 import android.graphics.Outline
 import android.graphics.Rect
 import android.graphics.SurfaceTexture
@@ -35,13 +36,18 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewOutlineProvider
 import android.view.animation.AccelerateDecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.buzzel.BuzzelApp
 import com.buzzel.debug.FileLogger
+import com.buzzel.model.LogDirection
+import com.buzzel.model.LogEntry
+import com.buzzel.model.LogStatus
 import com.buzzel.protocol.Protocol
 import com.buzzel.service.BuzzelService
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -99,12 +105,11 @@ class MainActivity : Activity() {
     private var lastDarkMode = false
     private var permissionsEverRequested = false
     private var stateListener: ((BuzzelService.ConnectionState) -> Unit)? = null
-    private var logListener: ((com.buzzel.model.LogEntry) -> Unit)? = null
+    private var logListener: ((LogEntry) -> Unit)? = null
 
     // Camera / QR scanning
     private lateinit var cameraTextureView: TextureView
     private lateinit var cameraFrame: FrameLayout
-    private lateinit var contentFrame: FrameLayout
     private var cameraDevice: CameraDevice? = null
     private var captureSession: CameraCaptureSession? = null
     private var previewRequest: CaptureRequest.Builder? = null
@@ -124,8 +129,6 @@ class MainActivity : Activity() {
 
     private fun dp(value: Int) = dp(this as Context, value)
 
-    // --- Lifecycle ---
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         FileLogger.d(TAG, "Activity created")
@@ -133,7 +136,6 @@ class MainActivity : Activity() {
         AppColors.resolve(this)
         lastDarkMode = AppColors.isDarkMode(this)
 
-        // System bars
         @Suppress("DEPRECATION")
         window.statusBarColor = AppColors.surface
         @Suppress("DEPRECATION")
@@ -146,7 +148,6 @@ class MainActivity : Activity() {
                 View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
             }
 
-        // If any permission shows rationale, we've asked before
         permissionsEverRequested =
             REQUIRED_PERMISSIONS.any {
                 ActivityCompat.shouldShowRequestPermissionRationale(this, it)
@@ -178,8 +179,6 @@ class MainActivity : Activity() {
         logListener = null
         stopCamera()
         if (scannerInitialized) scanner.close()
-        // Stop the service when leaving the app if not actively connected.
-        // When connected, the service stays alive in the background with its notification.
         if (!app.isDeviceConnected) {
             stopService(Intent(this, BuzzelService::class.java))
         }
@@ -211,8 +210,6 @@ class MainActivity : Activity() {
             } else {
                 val still = missingPermissions()
                 FileLogger.i(TAG, "Still missing: ${still.map { it.substringAfterLast('.') }}")
-                // Inside onRequestPermissionsResult, shouldShowRequestPermissionRationale
-                // reliably returns false only for "permanently denied" (Don't allow + don't ask again)
                 val permanentlyDenied =
                     still.filter {
                         !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
@@ -242,21 +239,17 @@ class MainActivity : Activity() {
         super.onBackPressed()
     }
 
-    // --- QR ---
-
-    private fun handleQrResult(raw: ByteArray) {
-        val qr = Protocol.parseQr(raw) ?: return
+    private fun handleQRCodeResult(raw: ByteArray) {
+        val qrPayload = Protocol.parseQRCodePayload(raw) ?: return
         val store = app.configStore
         store.sessionId = null
-        store.pairingCode = Protocol.derivePairingCode(qr.seed)
-        store.pendingSessionId = Protocol.deriveSessionId(qr.seed)
-        store.macHost = qr.host
+        store.pairingCode = Protocol.derivePairingCode(qrPayload.seed)
+        store.pendingSessionId = Protocol.deriveSessionIdentifier(qrPayload.seed)
+        store.macHost = qrPayload.host
         app.hasBeenConnected = false
         startService()
         refreshState()
     }
-
-    // --- Layout ---
 
     private fun buildLayout() {
         rootLayout =
@@ -341,7 +334,7 @@ class MainActivity : Activity() {
             orbitRings = OrbitRingsView(context)
             powerButton = PowerButtonView(context)
             val btnSize = dp(112)
-            contentFrame =
+            val contentFrame =
                 FrameLayout(context).apply {
                     clipChildren = false
                     clipToPadding = false
@@ -445,16 +438,14 @@ class MainActivity : Activity() {
             )
         }
 
-    // --- State ---
-
     private fun observeState() {
-        val sl = { _: BuzzelService.ConnectionState -> runOnUiThread { refreshState() } }
-        stateListener = sl
-        app.addServiceConnectionStateListener(sl)
+        val stateCallback = { _: BuzzelService.ConnectionState -> runOnUiThread { refreshState() } }
+        stateListener = stateCallback
+        app.addServiceConnectionStateListener(stateCallback)
 
-        val ll = { _: com.buzzel.model.LogEntry -> runOnUiThread { refreshStatusLine() } }
-        logListener = ll
-        app.addLogEntryListener(ll)
+        val logCallback = { _: LogEntry -> runOnUiThread { refreshStatusLine() } }
+        logListener = logCallback
+        app.addLogEntryListener(logCallback)
     }
 
     private fun refreshState() {
@@ -466,7 +457,6 @@ class MainActivity : Activity() {
         powerButton.onUnpair = { onPowerButtonUnpair(state) }
         powerButton.onHoldCancel = { refreshStatusLine() }
 
-        // Header
         val title =
             when {
                 showActivityLog -> "Activity Log"
@@ -476,16 +466,10 @@ class MainActivity : Activity() {
             }
         headerView.setTitle(title)
 
-        // Trailing icon
-        if (showActivityLog || showSettings || scanMode) {
-            headerView.setTrailingIcon(ICON_ZAP, SVGIconView.IconMode.FILL, AppColors.text)
-            headerView.setTrailingIconEnabled(true)
-        } else {
-            headerView.setTrailingIcon(ICON_SETTINGS, SVGIconView.IconMode.FILL, AppColors.text)
-            headerView.setTrailingIconEnabled(true)
-        }
+        val trailingIcon = if (showActivityLog || showSettings || scanMode) ICON_ZAP else ICON_SETTINGS
+        headerView.setTrailingIcon(trailingIcon, SVGIconView.IconMode.FILL, AppColors.text)
+        headerView.setTrailingIconEnabled(true)
 
-        // Device planet on orbit rings
         val isPaired = app.configStore.pairingCode != null
         orbitRings.deviceName = if (isPaired) "Mac" else null
         orbitRings.isDeviceConnected = state == PowerButtonState.CONNECTED
@@ -495,7 +479,10 @@ class MainActivity : Activity() {
 
     private fun computeState(): PowerButtonState {
         if (!hasAllPermissions()) {
-            FileLogger.d(TAG, "computeState: RESTRICTED — missing: ${missingPermissions().map { it.substringAfterLast('.') }}")
+            FileLogger.d(
+                TAG,
+                "computeState: RESTRICTED — missing: ${missingPermissions().map { it.substringAfterLast('.') }}",
+            )
             return PowerButtonState.RESTRICTED
         }
         val state = PowerButtonState.current(app)
@@ -541,20 +528,19 @@ class MainActivity : Activity() {
             REQUIRED_PERMISSIONS.firstOrNull {
                 ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
             } ?: return "Required permissions are missing"
-        val label = permLabel(missing)
+        val label = permissionLabel(missing)
         return "$label access is required"
     }
 
-    private fun permLabel(perm: String): String =
+    private fun permissionLabel(permission: String): String =
         when {
-            perm == Manifest.permission.CAMERA -> "Camera"
-            perm.contains("BLUETOOTH") -> "Bluetooth"
-            perm.contains("LOCATION") -> "Location"
-            perm.contains("NOTIFICATION") -> "Notification"
+            permission == Manifest.permission.CAMERA -> "Camera"
+            permission.contains("BLUETOOTH") -> "Bluetooth"
+            permission.contains("LOCATION") -> "Location"
+            permission.contains("NOTIFICATION") -> "Notification"
             else -> "Permission"
         }
 
-    // Status line flip animation (3D rotation on X-axis)
     private fun setStatusText(newText: String) {
         if (newText == currentStatusText) return
         if (currentStatusText.isEmpty()) {
@@ -564,7 +550,6 @@ class MainActivity : Activity() {
         }
         currentStatusText = newText
 
-        // Flip out
         val flipOut =
             ValueAnimator.ofFloat(0f, 90f).apply {
                 duration = 250
@@ -576,23 +561,19 @@ class MainActivity : Activity() {
         handler.postDelayed({
             statusLine.text = newText
             statusLine.rotationX = -90f
-            // Flip in with spring-like feel
             val flipIn =
                 ValueAnimator.ofFloat(-90f, 0f).apply {
                     duration = 350
-                    interpolator = android.view.animation.OvershootInterpolator(1.2f)
+                    interpolator = OvershootInterpolator(1.2f)
                     addUpdateListener { statusLine.rotationX = it.animatedValue as Float }
                 }
             flipIn.start()
         }, 250)
     }
 
-    // --- Navigation ---
-
     private fun onTrailingIconTap() {
         when {
-            showActivityLog -> showMainView()
-            showSettings -> showMainView()
+            showActivityLog || showSettings -> showMainView()
             scanMode -> exitScanMode()
             else -> showSettingsView()
         }
@@ -617,20 +598,19 @@ class MainActivity : Activity() {
     }
 
     private fun buildSettingsView(): View {
-        val ctx = this
         val store = app.configStore
         val labels = arrayOf("Auto", "WiFi", "Bluetooth")
         val values = arrayOf("auto", "wifi", "ble")
 
         val container =
-            LinearLayout(ctx).apply {
+            LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(16), dp(20), dp(16), 0)
             }
 
         // Section label
         container.addView(
-            TextView(ctx).apply {
+            TextView(this@MainActivity).apply {
                 text = "Preferred Transport"
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
                 typeface = Brand.typeface
@@ -642,7 +622,7 @@ class MainActivity : Activity() {
 
         // Segmented control container
         val segmentContainer =
-            LinearLayout(ctx).apply {
+            LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
                 background =
                     GradientDrawable().apply {
@@ -652,13 +632,13 @@ class MainActivity : Activity() {
                 setPadding(dp(4), dp(4), dp(4), dp(4))
             }
 
-        val current = store.preferTransport ?: "auto"
+        val current = store.preferredTransport ?: "auto"
         val segmentViews = mutableListOf<TextView>()
 
         for ((i, label) in labels.withIndex()) {
             val selected = values[i] == current
-            val tv =
-                TextView(ctx).apply {
+            val segmentView =
+                TextView(this@MainActivity).apply {
                     text = label
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                     typeface = Brand.typeface
@@ -676,23 +656,21 @@ class MainActivity : Activity() {
                         }
                     isClickable = true
                 }
-            segmentViews.add(tv)
+            segmentViews.add(segmentView)
             segmentContainer.addView(
-                tv,
+                segmentView,
                 LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
             )
         }
 
-        // Click handlers
-        for ((i, tv) in segmentViews.withIndex()) {
-            tv.setOnClickListener {
-                store.preferTransport = values[i]
-                // Update visuals
+        for ((i, segmentView) in segmentViews.withIndex()) {
+            segmentView.setOnClickListener {
+                store.preferredTransport = values[i]
                 for ((j, other) in segmentViews.withIndex()) {
-                    val sel = j == i
-                    other.setTextColor(if (sel) AppColors.onButton else AppColors.secondary)
+                    val selected = j == i
+                    other.setTextColor(if (selected) AppColors.onButton else AppColors.secondary)
                     other.background =
-                        if (sel) {
+                        if (selected) {
                             GradientDrawable().apply {
                                 setColor(AppColors.accent)
                                 cornerRadius = dp(7).toFloat()
@@ -739,28 +717,27 @@ class MainActivity : Activity() {
     }
 
     private fun buildActivityLogView(): View {
-        val ctx = this
         val container =
-            LinearLayout(ctx).apply {
+            LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
             }
 
-        val scroll = android.widget.ScrollView(ctx)
+        val scroll = ScrollView(this@MainActivity)
         val entries =
-            LinearLayout(ctx).apply {
+            LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.VERTICAL
             }
 
         val snapshot = app.getLogEntrySnapshot()
         if (snapshot.isEmpty()) {
             val emptyState =
-                LinearLayout(ctx).apply {
+                LinearLayout(this@MainActivity).apply {
                     tag = "empty"
                     orientation = LinearLayout.VERTICAL
                     gravity = Gravity.CENTER
                 }
             emptyState.addView(
-                WaveBLogoView(ctx, AppColors.withAlpha(AppColors.secondary, 77)).also {
+                WaveBLogoView(this@MainActivity, AppColors.withAlpha(AppColors.secondary, 77)).also {
                     it.layoutParams =
                         LinearLayout.LayoutParams(dp(32), dp(32)).apply {
                             gravity = Gravity.CENTER_HORIZONTAL
@@ -768,7 +745,7 @@ class MainActivity : Activity() {
                 },
             )
             emptyState.addView(
-                TextView(ctx).apply {
+                TextView(this@MainActivity).apply {
                     text = "No activity yet"
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
                     typeface = Brand.typeface
@@ -779,7 +756,7 @@ class MainActivity : Activity() {
                 matchWrap(),
             )
             emptyState.addView(
-                TextView(ctx).apply {
+                TextView(this@MainActivity).apply {
                     text = "Events will appear here"
                     setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
                     typeface = Brand.typeface
@@ -802,7 +779,7 @@ class MainActivity : Activity() {
             for ((i, entry) in snapshot.withIndex()) {
                 entries.addView(buildLogEntryRow(entry))
                 if (i < snapshot.size - 1) {
-                    val divider = View(ctx).apply { setBackgroundColor(AppColors.border) }
+                    val divider = View(this@MainActivity).apply { setBackgroundColor(AppColors.border) }
                     entries.addView(
                         divider,
                         LinearLayout
@@ -829,10 +806,10 @@ class MainActivity : Activity() {
         scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
 
         // Listen for new entries
-        val listener: (com.buzzel.model.LogEntry) -> Unit = { entry ->
+        val listener: (LogEntry) -> Unit = { entry ->
             runOnUiThread {
                 if (entries.childCount > 0) {
-                    val divider = View(ctx).apply { setBackgroundColor(AppColors.border) }
+                    val divider = View(this@MainActivity).apply { setBackgroundColor(AppColors.border) }
                     entries.addView(
                         divider,
                         LinearLayout
@@ -854,23 +831,23 @@ class MainActivity : Activity() {
         return container
     }
 
-    private fun buildLogEntryRow(entry: com.buzzel.model.LogEntry): LinearLayout =
+    private fun buildLogEntryRow(entry: LogEntry): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(dp(16), dp(8), dp(16), dp(8))
             gravity = Gravity.TOP
 
             // Direction icon
-            val iconColor = if (entry.status == com.buzzel.model.LogStatus.SUCCESS) AppColors.green else AppColors.red
+            val iconColor = if (entry.status == LogStatus.SUCCESS) AppColors.green else AppColors.red
             val iconPath =
                 when (entry.direction) {
-                    com.buzzel.model.LogDirection.INCOMING -> ICON_ARROW_DOWN
-                    com.buzzel.model.LogDirection.OUTGOING -> ICON_ARROW_UP
-                    com.buzzel.model.LogDirection.LOCAL -> ICON_DOT
+                    LogDirection.INCOMING -> ICON_ARROW_DOWN
+                    LogDirection.OUTGOING -> ICON_ARROW_UP
+                    LogDirection.LOCAL -> ICON_DOT
                 }
             val iconMode =
                 if (entry.direction ==
-                    com.buzzel.model.LogDirection.LOCAL
+                    LogDirection.LOCAL
                 ) {
                     SVGIconView.IconMode.FILL
                 } else {
@@ -928,25 +905,19 @@ class MainActivity : Activity() {
             )
         }
 
-    // --- Actions ---
-
     private fun onPowerButtonTap(state: PowerButtonState) {
         when (state) {
             PowerButtonState.RESTRICTED -> {
                 val missing = missingPermissions()
                 FileLogger.i(TAG, "RESTRICTED tap — missing: ${missing.map { it.substringAfterLast('.') }}")
                 if (missing.isEmpty()) {
-                    // Permissions were granted externally (e.g. Settings); just refresh
                     FileLogger.i(TAG, "All permissions already granted — refreshing")
                     refreshState()
                 } else {
-                    // Check if any are permanently denied (user tapped "Don't allow" before)
                     val permanentlyDenied =
                         missing.filter {
                             !ActivityCompat.shouldShowRequestPermissionRationale(this, it)
                         }
-                    // shouldShowRequestPermissionRationale returns false for both "never asked"
-                    // and "permanently denied". We use a flag to distinguish.
                     if (permissionsEverRequested && permanentlyDenied.size == missing.size) {
                         FileLogger.i(TAG, "All missing permissions permanently denied — opening settings")
                         openAppSettings()
@@ -962,15 +933,7 @@ class MainActivity : Activity() {
                 enterScanMode()
             }
 
-            PowerButtonState.CONNECTING -> {
-                startService(
-                    Intent(this, BuzzelService::class.java).apply {
-                        action = BuzzelService.ACTION_SOFT_DISCONNECT
-                    },
-                )
-            }
-
-            PowerButtonState.CONNECTED -> {
+            PowerButtonState.CONNECTING, PowerButtonState.CONNECTED -> {
                 startService(
                     Intent(this, BuzzelService::class.java).apply {
                         action = BuzzelService.ACTION_SOFT_DISCONNECT
@@ -985,13 +948,17 @@ class MainActivity : Activity() {
     }
 
     private fun onPowerButtonHoldWarning(state: PowerButtonState) {
-        if (state == PowerButtonState.CONNECTING || state == PowerButtonState.CONNECTED || state == PowerButtonState.DISCONNECTED) {
+        if (state == PowerButtonState.CONNECTING || state == PowerButtonState.CONNECTED ||
+            state == PowerButtonState.DISCONNECTED
+        ) {
             setStatusText("Keep pressing to unpair")
         }
     }
 
     private fun onPowerButtonUnpair(state: PowerButtonState) {
-        if (state == PowerButtonState.CONNECTING || state == PowerButtonState.CONNECTED || state == PowerButtonState.DISCONNECTED) {
+        if (state == PowerButtonState.CONNECTING || state == PowerButtonState.CONNECTED ||
+            state == PowerButtonState.DISCONNECTED
+        ) {
             startService(
                 Intent(this, BuzzelService::class.java).apply {
                     action = BuzzelService.ACTION_UNPAIR
@@ -1004,8 +971,6 @@ class MainActivity : Activity() {
     private fun onStatusLineTap() {
         showActivityLogView()
     }
-
-    // --- Scan mode ---
 
     private fun enterScanMode() {
         scanMode = true
@@ -1101,7 +1066,11 @@ class MainActivity : Activity() {
                 }
             }, bgHandler)
 
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                return
+            }
 
             manager.openCamera(
                 cameraId,
@@ -1139,8 +1108,7 @@ class MainActivity : Activity() {
             val texture = cameraTextureView.surfaceTexture ?: return
             texture.setDefaultBufferSize(size.width, size.height)
 
-            // Center-crop the preview to fill the square TextureView
-            handler.post { applyPreviewTransform(size, sensorOrientation) }
+            handler.post { applyPreviewTransform(size) }
 
             val previewSurface = Surface(texture)
             val readerSurface = imageReader!!.surface
@@ -1168,24 +1136,19 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun applyPreviewTransform(
-        previewSize: Size,
-        sensorOrientation: Int,
-    ) {
+    private fun applyPreviewTransform(previewSize: Size) {
         val viewW = cameraTextureView.width.toFloat()
         val viewH = cameraTextureView.height.toFloat()
         if (viewW == 0f || viewH == 0f) return
 
-        // Stream is landscape (e.g. 1280x720), view is square.
-        // After 90° sensor rotation the effective dims are swapped.
         val streamW = previewSize.width.toFloat()
         val streamH = previewSize.height.toFloat()
 
-        val scaleX = viewW / streamH // rotated 90°
+        val scaleX = viewW / streamH
         val scaleY = viewH / streamW
         val scale = maxOf(scaleX, scaleY)
 
-        val matrix = android.graphics.Matrix()
+        val matrix = Matrix()
         matrix.setScale(scale * streamH / viewW, scale * streamW / viewH, viewW / 2f, viewH / 2f)
         cameraTextureView.setTransform(matrix)
     }
@@ -1194,16 +1157,15 @@ class MainActivity : Activity() {
         if (!scanning) return
         for (barcode in barcodes) {
             if (barcode.format != Barcode.FORMAT_QR_CODE) continue
-            // rawBytes may be null for binary QR on some ML Kit versions; fall back to ISO-8859-1
             val raw =
                 barcode.rawBytes
                     ?: barcode.rawValue?.toByteArray(Charsets.ISO_8859_1)
                     ?: continue
-            if (Protocol.parseQr(raw) == null) continue
+            if (Protocol.parseQRCodePayload(raw) == null) continue
             scanning = false
             runOnUiThread {
                 exitScanMode()
-                handleQrResult(raw)
+                handleQRCodeResult(raw)
             }
             return
         }
@@ -1230,17 +1192,14 @@ class MainActivity : Activity() {
             )
 
         try {
-            // Cancel any ongoing AF first
             request.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_CANCEL)
             session.capture(request.build(), null, bgHandler)
 
-            // Set metering region and trigger AF
             request.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
             request.set(CaptureRequest.CONTROL_AF_REGIONS, arrayOf(focusRect))
             request.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START)
             session.capture(request.build(), null, bgHandler)
 
-            // Resume continuous AF after focus locks
             handler.postDelayed({
                 request.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_IDLE)
                 request.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
@@ -1273,8 +1232,6 @@ class MainActivity : Activity() {
         bgHandler = null
     }
 
-    // --- Helpers ---
-
     private fun hasAllPermissions(): Boolean =
         REQUIRED_PERMISSIONS.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
 
@@ -1283,9 +1240,14 @@ class MainActivity : Activity() {
 
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
         ) {
-            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), PERMISSION_REQUEST + 1)
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                PERMISSION_REQUEST + 1,
+            )
         }
     }
 

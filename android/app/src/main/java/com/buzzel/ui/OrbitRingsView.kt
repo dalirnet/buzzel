@@ -5,7 +5,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
-import android.graphics.drawable.GradientDrawable
 import android.view.Choreographer
 import android.widget.FrameLayout
 import kotlin.math.abs
@@ -114,8 +113,6 @@ class OrbitRingsView(
         setWillNotDraw(false)
     }
 
-    // region Lifecycle
-
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         startTime = System.nanoTime()
@@ -141,10 +138,6 @@ class OrbitRingsView(
             choreographer.removeFrameCallback(frameCallback)
         }
     }
-
-    // endregion
-
-    // region Drawing
 
     override fun dispatchDraw(canvas: Canvas) {
         val cx = width / 2f
@@ -225,6 +218,4 @@ class OrbitRingsView(
         val textY = py - (planetTextPaint.descent() + planetTextPaint.ascent()) / 2
         canvas.drawText(name, px, textY, planetTextPaint)
     }
-
-    // endregion
 }

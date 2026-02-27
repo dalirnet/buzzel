@@ -4,6 +4,7 @@ import com.buzzel.debug.FileLogger
 import com.buzzel.protocol.Protocol
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 
@@ -13,12 +14,12 @@ class TcpClient(
 ) {
     companion object {
         private const val TAG = "TcpClient"
-        private const val CONNECT_TIMEOUT_MS = 5000
-        private val WIFI_MAX_PAYLOAD = Protocol.maxPayload(Protocol.WIFI_MAX_FRAME)
+        private const val CONNECT_TIMEOUT_MILLISECONDS = 5000
+        private val WIFI_MAXIMUM_PAYLOAD_SIZE = Protocol.maximumPayloadSize(Protocol.WIFI_MAXIMUM_FRAME_SIZE)
     }
 
     private var socket: Socket? = null
-    private var outputStream: java.io.OutputStream? = null
+    private var outputStream: OutputStream? = null
 
     @Volatile
     private var running = false
@@ -67,7 +68,7 @@ class TcpClient(
         var didConnect = false
         try {
             val sock = Socket()
-            sock.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MS)
+            sock.connect(InetSocketAddress(host, port), CONNECT_TIMEOUT_MILLISECONDS)
             sock.keepAlive = true
             FileLogger.i(TAG, "Connected to $host:$port")
             socket = sock
@@ -90,7 +91,7 @@ class TcpClient(
             while (running && !socket.isClosed) {
                 val header = readExact(input, FrameCodec.HEADER_SIZE) ?: break
                 val length = FrameCodec.decodeLength(header)
-                if (length <= 0 || length > WIFI_MAX_PAYLOAD) {
+                if (length <= 0 || length > WIFI_MAXIMUM_PAYLOAD_SIZE) {
                     FileLogger.w(TAG, "Invalid frame size: $length")
                     break
                 }
@@ -107,13 +108,13 @@ class TcpClient(
         input: InputStream,
         size: Int,
     ): ByteArray? {
-        val buf = ByteArray(size)
+        val buffer = ByteArray(size)
         var read = 0
         while (read < size) {
-            val n = input.read(buf, read, size - read)
-            if (n < 0) return null
-            read += n
+            val bytesRead = input.read(buffer, read, size - read)
+            if (bytesRead < 0) return null
+            read += bytesRead
         }
-        return buf
+        return buffer
     }
 }

@@ -20,17 +20,16 @@ enum class PowerButtonState {
             // BLUETOOTH_CONNECT is a runtime permission only on API 31+.
             // On older devices the legacy BLUETOOTH permission (normal, not runtime) is enough.
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val btGranted =
+                val bluetoothGranted =
                     ContextCompat.checkSelfPermission(
                         app,
                         Manifest.permission.BLUETOOTH_CONNECT,
                     ) == PackageManager.PERMISSION_GRANTED
-                if (!btGranted) return RESTRICTED
+                if (!bluetoothGranted) return RESTRICTED
             }
 
-            // UNPAIRED = no QR scanned yet (no pairing code stored)
-            val hasQr = app.configStore.pairingCode != null
-            if (!hasQr) return UNPAIRED
+            val isPaired = app.configStore.pairingCode != null
+            if (!isPaired) return UNPAIRED
 
             return when (app.serviceConnectionState) {
                 BuzzelService.ConnectionState.ACTIVE -> CONNECTED

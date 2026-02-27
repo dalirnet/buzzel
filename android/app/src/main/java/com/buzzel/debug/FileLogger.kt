@@ -11,75 +11,68 @@ import java.util.Locale
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Writes log output to a file alongside the normal Android logcat.
- *
- * Usage: replace `Log.d(TAG, msg)` with `FileLogger.d(TAG, msg)`.
- * Log file location: <external-files-dir>/buzzel.log
- * Rotates at 5 MB (keeps one backup: buzzel.log.1).
- */
 object FileLogger {
-    private const val FTAG = "FileLogger"
+    private const val TAG = "FileLogger"
     private const val FILE_NAME = "buzzel.log"
-    private const val MAX_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB
+    private const val MAXIMUM_FILE_SIZE_BYTES = 5 * 1024 * 1024 // 5 MB
 
-    private val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
+    private val dateFormatter = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)
     private val queue = LinkedBlockingQueue<String>()
     private val running = AtomicBoolean(false)
     private var logFile: File? = null
 
     fun init(context: Context) {
-        val dir = context.getExternalFilesDir(null) ?: context.filesDir
-        logFile = File(dir, FILE_NAME)
+        val directory = context.getExternalFilesDir(null) ?: context.filesDir
+        logFile = File(directory, FILE_NAME)
         if (!running.getAndSet(true)) {
             Thread({ drain() }, "FileLogger").apply {
                 isDaemon = true
                 start()
             }
         }
-        enqueue("I", FTAG, "=== Log started: ${logFile?.absolutePath} ===")
+        enqueue("I", TAG, "=== Log started: ${logFile?.absolutePath} ===")
     }
 
     fun d(
         tag: String,
-        msg: String,
+        message: String,
     ) {
-        Log.d(tag, msg)
-        enqueue("D", tag, msg)
+        Log.d(tag, message)
+        enqueue("D", tag, message)
     }
 
     fun i(
         tag: String,
-        msg: String,
+        message: String,
     ) {
-        Log.i(tag, msg)
-        enqueue("I", tag, msg)
+        Log.i(tag, message)
+        enqueue("I", tag, message)
     }
 
     fun w(
         tag: String,
-        msg: String,
-        e: Throwable? = null,
+        message: String,
+        error: Throwable? = null,
     ) {
-        if (e != null) Log.w(tag, msg, e) else Log.w(tag, msg)
-        enqueue("W", tag, if (e != null) "$msg | ${e.javaClass.simpleName}: ${e.message}" else msg)
+        if (error != null) Log.w(tag, message, error) else Log.w(tag, message)
+        enqueue("W", tag, if (error != null) "$message | ${error.javaClass.simpleName}: ${error.message}" else message)
     }
 
     fun e(
         tag: String,
-        msg: String,
-        e: Throwable? = null,
+        message: String,
+        error: Throwable? = null,
     ) {
-        if (e != null) Log.e(tag, msg, e) else Log.e(tag, msg)
-        enqueue("E", tag, if (e != null) "$msg | ${e.javaClass.simpleName}: ${e.message}" else msg)
+        if (error != null) Log.e(tag, message, error) else Log.e(tag, message)
+        enqueue("E", tag, if (error != null) "$message | ${error.javaClass.simpleName}: ${error.message}" else message)
     }
 
     private fun enqueue(
         level: String,
         tag: String,
-        msg: String,
+        message: String,
     ) {
-        queue.offer("${fmt.format(Date())} $level/$tag: $msg")
+        queue.offer("${dateFormatter.format(Date())} $level/$tag: $message")
     }
 
     private fun drain() {
@@ -97,12 +90,12 @@ object FileLogger {
     private fun appendToFile(line: String) {
         val file = logFile ?: return
         try {
-            if (file.exists() && file.length() > MAX_SIZE_BYTES) {
+            if (file.exists() && file.length() > MAXIMUM_FILE_SIZE_BYTES) {
                 file.renameTo(File(file.parent, "buzzel.log.1"))
             }
             PrintWriter(FileWriter(file, true)).use { it.println(line) }
-        } catch (ex: Exception) {
-            Log.e(FTAG, "Write failed: ${ex.message}")
+        } catch (exception: Exception) {
+            Log.e(TAG, "Write failed: ${exception.message}")
         }
     }
 

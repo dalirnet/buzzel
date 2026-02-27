@@ -16,7 +16,7 @@ import android.bluetooth.le.AdvertiseSettings
 import android.content.Context
 import android.os.ParcelUuid
 import com.buzzel.debug.FileLogger
-import com.buzzel.protocol.BleUuids
+import com.buzzel.protocol.BluetoothServiceUUIDs
 import com.buzzel.protocol.Protocol
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -30,9 +30,9 @@ class BleGattServer(
     companion object {
         private const val TAG = "BleGattServer"
         private const val DEFAULT_MTU = 23
-        private const val ATT_OVERHEAD = 3
+        private const val ATTRIBUTE_PROTOCOL_OVERHEAD = 3
         private const val MIN_CHUNK_SIZE = 20
-        private const val NOTIFICATION_TIMEOUT_SEC = 5L
+        private const val NOTIFICATION_TIMEOUT_SECONDS = 5L
     }
 
     private var bluetoothManager: BluetoothManager? = null
@@ -42,9 +42,9 @@ class BleGattServer(
     private var isAdvertising = false
     private var lowPower = true
     private var negotiatedMtu = DEFAULT_MTU
-    private var recvBuffer = ByteArray(0)
+    private var receiveBuffer = ByteArray(0)
     private var preparedWriteBuffer = ByteArray(0)
-    private val recvLock = Any()
+    private val receiveLock = Any()
     private val notificationSentSignal = LinkedBlockingQueue<Int>(1)
     private var subscribedToNotifications = false
 
@@ -66,7 +66,7 @@ class BleGattServer(
                         connectedDevice = null
                         subscribedToNotifications = false
                         negotiatedMtu = DEFAULT_MTU
-                        recvBuffer = ByteArray(0)
+                        receiveBuffer = ByteArray(0)
                         preparedWriteBuffer = ByteArray(0)
                         onConnectionChanged(false)
                         startAdvertising()
@@ -83,7 +83,7 @@ class BleGattServer(
                 offset: Int,
                 value: ByteArray,
             ) {
-                if (characteristic.uuid == BleUuids.DATA_CHAR) {
+                if (characteristic.uuid == BluetoothServiceUUIDs.DATA_CHARACTERISTIC) {
                     if (responseNeeded) {
                         gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value)
                     }
@@ -120,13 +120,12 @@ class BleGattServer(
                 offset: Int,
                 value: ByteArray,
             ) {
-                if (descriptor.uuid == BleUuids.CCCD) {
+                if (descriptor.uuid == BluetoothServiceUUIDs.CCCD) {
                     descriptor.value = value
                     FileLogger.d(TAG, "CCCD written: ${value.map { it.toInt() and 0xFF }}")
                     if (responseNeeded) {
                         gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, null)
                     }
-                    // Notifications enabled — central is now subscribed and ready to receive
                     val enabled = value.size >= 2 && value[0].toInt() == 1
                     if (enabled && !subscribedToNotifications) {
                         subscribedToNotifications = true
@@ -153,14 +152,14 @@ class BleGattServer(
             }
         }
 
-    private val bleMaxPayload: Int
-        get() = Protocol.maxPayload(Protocol.maxFrameForMtu(negotiatedMtu))
+    private val bluetoothMaximumPayloadSize: Int
+        get() = Protocol.maximumPayloadSize(Protocol.maximumFrameSizeForMaximumTransmissionUnit(negotiatedMtu))
 
     private fun processReceivedData(data: ByteArray) {
-        synchronized(recvLock) {
-            recvBuffer += data
-            recvBuffer =
-                FrameCodec.extractFrames(recvBuffer, bleMaxPayload) { payload ->
+        synchronized(receiveLock) {
+            receiveBuffer += data
+            receiveBuffer =
+                FrameCodec.extractFrames(receiveBuffer, bluetoothMaximumPayloadSize) { payload ->
                     FileLogger.d(TAG, "Frame received: ${payload.size} bytes")
                     onMessageReceived(payload)
                 }
@@ -215,8 +214,8 @@ class BleGattServer(
         connectedDevice = null
         subscribedToNotifications = false
         negotiatedMtu = DEFAULT_MTU
-        synchronized(recvLock) {
-            recvBuffer = ByteArray(0)
+        synchronized(receiveLock) {
+            receiveBuffer = ByteArray(0)
             preparedWriteBuffer = ByteArray(0)
         }
         if (!isAdvertising) {
@@ -238,9 +237,9 @@ class BleGattServer(
         val device = connectedDevice ?: return false
         val characteristic = dataCharacteristic ?: return false
 
-        val frame = FrameCodec.encode(data, bleMaxPayload)
+        val frame = FrameCodec.encode(data, bluetoothMaximumPayloadSize)
 
-        val chunkSize = (negotiatedMtu - ATT_OVERHEAD).coerceAtLeast(MIN_CHUNK_SIZE)
+        val chunkSize = (negotiatedMtu - ATTRIBUTE_PROTOCOL_OVERHEAD).coerceAtLeast(MIN_CHUNK_SIZE)
         val chunks = frame.toList().chunked(chunkSize)
         FileLogger.d(TAG, "Sending ${data.size} bytes in ${chunks.size} chunks (mtu=$negotiatedMtu)")
 
@@ -252,7 +251,7 @@ class BleGattServer(
                 FileLogger.w(TAG, "Failed to send notification chunk $i/${chunks.size}")
                 return false
             }
-            val status = notificationSentSignal.poll(NOTIFICATION_TIMEOUT_SEC, TimeUnit.SECONDS)
+            val status = notificationSentSignal.poll(NOTIFICATION_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             if (status == null) {
                 FileLogger.w(TAG, "Timeout waiting for onNotificationSent at chunk $i/${chunks.size}")
                 return false
@@ -269,18 +268,17 @@ class BleGattServer(
         get() = connectedDevice != null && subscribedToNotifications
 
     private fun setupService() {
-        val service = BluetoothGattService(BleUuids.SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
+        val service = BluetoothGattService(BluetoothServiceUUIDs.SERVICE, BluetoothGattService.SERVICE_TYPE_PRIMARY)
 
-        // Single data characteristic — bidirectional (write + notify)
         dataCharacteristic =
             BluetoothGattCharacteristic(
-                BleUuids.DATA_CHAR,
+                BluetoothServiceUUIDs.DATA_CHARACTERISTIC,
                 BluetoothGattCharacteristic.PROPERTY_WRITE or BluetoothGattCharacteristic.PROPERTY_NOTIFY,
                 BluetoothGattCharacteristic.PERMISSION_WRITE,
             ).also {
                 val cccd =
                     BluetoothGattDescriptor(
-                        BleUuids.CCCD,
+                        BluetoothServiceUUIDs.CCCD,
                         BluetoothGattDescriptor.PERMISSION_WRITE or BluetoothGattDescriptor.PERMISSION_READ,
                     )
                 it.addDescriptor(cccd)
@@ -322,7 +320,7 @@ class BleGattServer(
             AdvertiseData
                 .Builder()
                 .setIncludeDeviceName(true)
-                .addServiceUuid(ParcelUuid(BleUuids.SERVICE))
+                .addServiceUuid(ParcelUuid(BluetoothServiceUUIDs.SERVICE))
                 .build()
 
         advertiser.startAdvertising(settings, data, advertiseCallback)

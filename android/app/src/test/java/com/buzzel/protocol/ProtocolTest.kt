@@ -16,48 +16,48 @@ class ProtocolTest {
     private val seed = ByteArray(16) { it.toByte() }
 
     // Cross-platform expected values (verified with Python SHA256)
-    private val expectedSessionId = "BE45CB26-05BF-36BE-BDE6-84841A28F0FD"
+    private val expectedSessionIdentifier = "BE45CB26-05BF-36BE-BDE6-84841A28F0FD"
     private val expectedPairingCode = "279084"
 
-    // --- QR ---
+    // --- QR Code ---
 
     @Test
-    fun parseQr_valid() {
-        val qr = buildQr(seed, "192.168.1.100", "wifi")
-        val result = Protocol.parseQr(qr)
+    fun parseQRCodePayload_valid() {
+        val qrData = buildQRCodePayload(seed, "192.168.1.100", "wifi")
+        val result = Protocol.parseQRCodePayload(qrData)
         assertNotNull(result)
         assertArrayEquals(seed, result!!.seed)
         assertEquals("192.168.1.100", result.host)
-        assertEquals("wifi", result.prefer)
+        assertEquals("wifi", result.preferredTransport)
     }
 
     @Test
-    fun parseQr_blePrefer() {
-        val qr = buildQr(seed, "10.0.0.1", "ble")
-        val result = Protocol.parseQr(qr)
+    fun parseQRCodePayload_blePreferred() {
+        val qrData = buildQRCodePayload(seed, "10.0.0.1", "ble")
+        val result = Protocol.parseQRCodePayload(qrData)
         assertNotNull(result)
         assertEquals("10.0.0.1", result!!.host)
-        assertEquals("ble", result.prefer)
+        assertEquals("ble", result.preferredTransport)
     }
 
     @Test
-    fun parseQr_wrongSize() {
-        assertNull(Protocol.parseQr(ByteArray(10)))
-        assertNull(Protocol.parseQr(ByteArray(25)))
+    fun parseQRCodePayload_wrongSize() {
+        assertNull(Protocol.parseQRCodePayload(ByteArray(10)))
+        assertNull(Protocol.parseQRCodePayload(ByteArray(25)))
     }
 
     @Test
-    fun parseQr_wrongMagic() {
-        val qr = buildQr(seed, "192.168.1.1", "wifi")
-        qr[0] = 0xFF.toByte()
-        assertNull(Protocol.parseQr(qr))
+    fun parseQRCodePayload_wrongMagic() {
+        val qrData = buildQRCodePayload(seed, "192.168.1.1", "wifi")
+        qrData[0] = 0xFF.toByte()
+        assertNull(Protocol.parseQRCodePayload(qrData))
     }
 
     // --- Seed Derivation ---
 
     @Test
-    fun deriveSessionId_crossPlatform() {
-        assertEquals(expectedSessionId, Protocol.deriveSessionId(seed))
+    fun deriveSessionIdentifier_crossPlatform() {
+        assertEquals(expectedSessionIdentifier, Protocol.deriveSessionIdentifier(seed))
     }
 
     @Test
@@ -77,37 +77,37 @@ class ProtocolTest {
 
     @Test
     fun createPing() {
-        val p = Protocol.createPing()
-        assertEquals(1, p.size)
-        assertEquals(Signal.PING, p[0])
+        val payload = Protocol.createPing()
+        assertEquals(1, payload.size)
+        assertEquals(Signal.PING, payload[0])
     }
 
     @Test
     fun createPong() {
-        val p = Protocol.createPong()
-        assertEquals(1, p.size)
-        assertEquals(Signal.PONG, p[0])
+        val payload = Protocol.createPong()
+        assertEquals(1, payload.size)
+        assertEquals(Signal.PONG, payload[0])
     }
 
     @Test
     fun createReady() {
-        val p = Protocol.createReady()
-        assertEquals(1, p.size)
-        assertEquals(Signal.READY, p[0])
+        val payload = Protocol.createReady()
+        assertEquals(1, payload.size)
+        assertEquals(Signal.READY, payload[0])
     }
 
     @Test
     fun createGoodbye() {
-        val p = Protocol.createGoodbye()
-        assertEquals(1, p.size)
-        assertEquals(Signal.GOODBYE, p[0])
+        val payload = Protocol.createGoodbye()
+        assertEquals(1, payload.size)
+        assertEquals(Signal.GOODBYE, payload[0])
     }
 
     @Test
     fun createUnpair() {
-        val p = Protocol.createUnpair()
-        assertEquals(1, p.size)
-        assertEquals(Signal.UNPAIR, p[0])
+        val payload = Protocol.createUnpair()
+        assertEquals(1, payload.size)
+        assertEquals(Signal.UNPAIR, payload[0])
     }
 
     // --- pair.request ---
@@ -158,108 +158,108 @@ class ProtocolTest {
         assertNull(Protocol.parsePairResponse(byteArrayOf(Signal.PAIR_RESPONSE, 0x01)))
     }
 
-    // --- ack ---
+    // --- acknowledgment ---
 
     @Test
-    fun ack_roundTrip() {
-        val payload = Protocol.createAck(42)
+    fun acknowledgment_roundTrip() {
+        val payload = Protocol.createAcknowledgment(42)
         assertEquals(3, payload.size)
-        assertEquals(Signal.ACK, payload[0])
-        assertEquals(42, Protocol.parseAckSeq(payload))
+        assertEquals(Signal.ACKNOWLEDGMENT, payload[0])
+        assertEquals(42, Protocol.parseAcknowledgmentSequenceNumber(payload))
     }
 
     @Test
-    fun ack_maxSeq() {
-        val payload = Protocol.createAck(65535)
-        assertEquals(65535, Protocol.parseAckSeq(payload))
+    fun acknowledgment_maxSequenceNumber() {
+        val payload = Protocol.createAcknowledgment(65535)
+        assertEquals(65535, Protocol.parseAcknowledgmentSequenceNumber(payload))
     }
 
     @Test
-    fun ack_zero() {
-        val payload = Protocol.createAck(0)
-        assertEquals(0, Protocol.parseAckSeq(payload))
+    fun acknowledgment_zero() {
+        val payload = Protocol.createAcknowledgment(0)
+        assertEquals(0, Protocol.parseAcknowledgmentSequenceNumber(payload))
     }
 
     @Test
-    fun parseAckSeq_tooShort() {
-        assertNull(Protocol.parseAckSeq(byteArrayOf(Signal.ACK)))
+    fun parseAcknowledgmentSequenceNumber_tooShort() {
+        assertNull(Protocol.parseAcknowledgmentSequenceNumber(byteArrayOf(Signal.ACKNOWLEDGMENT)))
     }
 
-    // --- parseSignalId ---
+    // --- parseSignalIdentifier ---
 
     @Test
-    fun parseSignalId_all() {
-        assertEquals(Signal.COMMAND, Protocol.parseSignalId(byteArrayOf(0x00)))
-        assertEquals(Signal.PAIR_REQUEST, Protocol.parseSignalId(byteArrayOf(0x01)))
-        assertEquals(Signal.PING, Protocol.parseSignalId(byteArrayOf(0x04)))
-        assertEquals(Signal.UNPAIR, Protocol.parseSignalId(byteArrayOf(0x08)))
+    fun parseSignalIdentifier_all() {
+        assertEquals(Signal.COMMAND, Protocol.parseSignalIdentifier(byteArrayOf(0x00)))
+        assertEquals(Signal.PAIR_REQUEST, Protocol.parseSignalIdentifier(byteArrayOf(0x01)))
+        assertEquals(Signal.PING, Protocol.parseSignalIdentifier(byteArrayOf(0x04)))
+        assertEquals(Signal.UNPAIR, Protocol.parseSignalIdentifier(byteArrayOf(0x08)))
     }
 
     @Test
-    fun parseSignalId_empty() {
-        assertEquals((-1).toByte(), Protocol.parseSignalId(ByteArray(0)))
+    fun parseSignalIdentifier_empty() {
+        assertEquals((-1).toByte(), Protocol.parseSignalIdentifier(ByteArray(0)))
     }
 
     // --- Command ---
 
     @Test
     fun command_roundTrip() {
-        val tlv = Protocol.tlvEncodeString(0x01, "hello")
-        val payload = Protocol.createCommand(0x30, 5, tlv)
+        val tagLengthValueData = Protocol.encodeTagLengthValueString(0x01, "hello")
+        val payload = Protocol.createCommand(0x30, 5, tagLengthValueData)
         assertEquals(Signal.COMMAND, payload[0])
 
-        val cmd = Protocol.parseCommand(payload)
-        assertNotNull(cmd)
-        assertEquals(0x30.toByte(), cmd!!.cmd)
-        assertEquals(5, cmd.seq)
-        assertArrayEquals(tlv, cmd.data)
+        val command = Protocol.parseCommand(payload)
+        assertNotNull(command)
+        assertEquals(0x30.toByte(), command!!.commandIdentifier)
+        assertEquals(5, command.sequenceNumber)
+        assertArrayEquals(tagLengthValueData, command.data)
     }
 
     @Test
     fun command_emptyData() {
         val payload = Protocol.createCommand(0x10, 0)
-        val cmd = Protocol.parseCommand(payload)
-        assertNotNull(cmd)
-        assertEquals(0x10.toByte(), cmd!!.cmd)
-        assertEquals(0, cmd.seq)
-        assertEquals(0, cmd.data.size)
+        val command = Protocol.parseCommand(payload)
+        assertNotNull(command)
+        assertEquals(0x10.toByte(), command!!.commandIdentifier)
+        assertEquals(0, command.sequenceNumber)
+        assertEquals(0, command.data.size)
     }
 
     @Test
-    fun command_maxSeq() {
+    fun command_maxSequenceNumber() {
         val payload = Protocol.createCommand(0x01, 65535)
-        val cmd = Protocol.parseCommand(payload)
-        assertNotNull(cmd)
-        assertEquals(65535, cmd!!.seq)
+        val command = Protocol.parseCommand(payload)
+        assertNotNull(command)
+        assertEquals(65535, command!!.sequenceNumber)
     }
 
     @Test
-    fun command_maxTlvData() {
+    fun command_maxTagLengthValueData() {
         val bigData = ByteArray(255) { it.toByte() }
         val payload = Protocol.createCommand(0x01, 1, bigData)
-        val cmd = Protocol.parseCommand(payload)
-        assertNotNull(cmd)
-        assertEquals(255, cmd!!.data.size)
+        val command = Protocol.parseCommand(payload)
+        assertNotNull(command)
+        assertEquals(255, command!!.data.size)
     }
 
     @Test
     fun command_truncatesOversize() {
         val oversized = ByteArray(300) { it.toByte() }
         val payload = Protocol.createCommand(0x01, 1, oversized)
-        val cmd = Protocol.parseCommand(payload)
-        assertNotNull(cmd)
-        assertEquals(Protocol.TLV_MAX_VALUE, cmd!!.data.size)
+        val command = Protocol.parseCommand(payload)
+        assertNotNull(command)
+        assertEquals(Protocol.TAG_LENGTH_VALUE_MAXIMUM_VALUE_SIZE, command!!.data.size)
     }
 
     @Test
-    fun command_truncatesWithCustomMaxTlvData() {
+    fun command_truncatesWithCustomMaximumTagLengthValueDataSize() {
         val oversized = ByteArray(300) { it.toByte() }
-        val maxFrame = Protocol.maxFrameForMtu(247) // MTU 247 -> maxFrame 244
-        val maxTlv = Protocol.maxTlvData(maxFrame) // 236
-        val payload = Protocol.createCommand(0x01, 1, oversized, maxTlv)
-        val cmd = Protocol.parseCommand(payload)
-        assertNotNull(cmd)
-        assertEquals(maxTlv, cmd!!.data.size)
+        val maximumFrameSize = Protocol.maximumFrameSizeForMaximumTransmissionUnit(247)
+        val maximumTagLengthValueDataSize = Protocol.maximumTagLengthValueDataSize(maximumFrameSize)
+        val payload = Protocol.createCommand(0x01, 1, oversized, maximumTagLengthValueDataSize)
+        val command = Protocol.parseCommand(payload)
+        assertNotNull(command)
+        assertEquals(maximumTagLengthValueDataSize, command!!.data.size)
     }
 
     @Test
@@ -272,64 +272,64 @@ class ProtocolTest {
         assertNull(Protocol.parseCommand(byteArrayOf(Signal.PING, 0x01, 0x00, 0x01)))
     }
 
-    // --- TLV ---
+    // --- Tag-Length-Value ---
 
     @Test
-    fun tlv_roundTrip() {
-        val encoded = Protocol.tlvEncode(0x01, byteArrayOf(0x0A, 0x0B, 0x0C))
+    fun tagLengthValue_roundTrip() {
+        val encoded = Protocol.encodeTagLengthValue(0x01, byteArrayOf(0x0A, 0x0B, 0x0C))
         assertEquals(5, encoded.size) // tag(1) + len(1) + value(3)
-        val fields = Protocol.tlvDecode(encoded)
+        val fields = Protocol.decodeTagLengthValue(encoded)
         assertEquals(1, fields.size)
         assertEquals(0x01.toByte(), fields[0].tag)
         assertArrayEquals(byteArrayOf(0x0A, 0x0B, 0x0C), fields[0].value)
     }
 
     @Test
-    fun tlvString_roundTrip() {
-        val encoded = Protocol.tlvEncodeString(0x10, "hello")
-        val fields = Protocol.tlvDecode(encoded)
-        assertEquals("hello", Protocol.tlvGetString(fields, 0x10))
+    fun tagLengthValueString_roundTrip() {
+        val encoded = Protocol.encodeTagLengthValueString(0x10, "hello")
+        val fields = Protocol.decodeTagLengthValue(encoded)
+        assertEquals("hello", Protocol.getTagLengthValueString(fields, 0x10))
     }
 
     @Test
-    fun tlvInt_roundTrip() {
-        val encoded = Protocol.tlvEncodeInt(0x20, 42)
-        val fields = Protocol.tlvDecode(encoded)
-        assertEquals(42, Protocol.tlvGetInt(fields, 0x20))
+    fun tagLengthValueInteger_roundTrip() {
+        val encoded = Protocol.encodeTagLengthValueInteger(0x20, 42)
+        val fields = Protocol.decodeTagLengthValue(encoded)
+        assertEquals(42, Protocol.getTagLengthValueInteger(fields, 0x20))
     }
 
     @Test
-    fun tlvByte_roundTrip() {
-        val encoded = Protocol.tlvEncodeByte(0x30, 0xFF.toByte())
-        val fields = Protocol.tlvDecode(encoded)
-        assertEquals(0xFF.toByte(), Protocol.tlvGetByte(fields, 0x30))
+    fun tagLengthValueByte_roundTrip() {
+        val encoded = Protocol.encodeTagLengthValueByte(0x30, 0xFF.toByte())
+        val fields = Protocol.decodeTagLengthValue(encoded)
+        assertEquals(0xFF.toByte(), Protocol.getTagLengthValueByte(fields, 0x30))
     }
 
     @Test
-    fun tlv_multipleFields() {
-        val buf =
-            Protocol.tlvEncodeString(0x01, "a") +
-                Protocol.tlvEncodeInt(0x02, 99) +
-                Protocol.tlvEncodeByte(0x03, 0x07)
-        val fields = Protocol.tlvDecode(buf)
+    fun tagLengthValue_multipleFields() {
+        val buffer =
+            Protocol.encodeTagLengthValueString(0x01, "a") +
+                Protocol.encodeTagLengthValueInteger(0x02, 99) +
+                Protocol.encodeTagLengthValueByte(0x03, 0x07)
+        val fields = Protocol.decodeTagLengthValue(buffer)
         assertEquals(3, fields.size)
-        assertEquals("a", Protocol.tlvGetString(fields, 0x01))
-        assertEquals(99, Protocol.tlvGetInt(fields, 0x02))
-        assertEquals(0x07.toByte(), Protocol.tlvGetByte(fields, 0x03))
+        assertEquals("a", Protocol.getTagLengthValueString(fields, 0x01))
+        assertEquals(99, Protocol.getTagLengthValueInteger(fields, 0x02))
+        assertEquals(0x07.toByte(), Protocol.getTagLengthValueByte(fields, 0x03))
     }
 
     @Test
-    fun tlv_missingTag() {
-        val encoded = Protocol.tlvEncodeString(0x01, "x")
-        val fields = Protocol.tlvDecode(encoded)
-        assertNull(Protocol.tlvGetString(fields, 0x99.toByte()))
-        assertNull(Protocol.tlvGetInt(fields, 0x99.toByte()))
-        assertNull(Protocol.tlvGetByte(fields, 0x99.toByte()))
+    fun tagLengthValue_missingTag() {
+        val encoded = Protocol.encodeTagLengthValueString(0x01, "x")
+        val fields = Protocol.decodeTagLengthValue(encoded)
+        assertNull(Protocol.getTagLengthValueString(fields, 0x99.toByte()))
+        assertNull(Protocol.getTagLengthValueInteger(fields, 0x99.toByte()))
+        assertNull(Protocol.getTagLengthValueByte(fields, 0x99.toByte()))
     }
 
     @Test
-    fun tlv_emptyData() {
-        val fields = Protocol.tlvDecode(ByteArray(0))
+    fun tagLengthValue_emptyData() {
+        val fields = Protocol.decodeTagLengthValue(ByteArray(0))
         assertTrue(fields.isEmpty())
     }
 
@@ -354,33 +354,33 @@ class ProtocolTest {
     }
 
     @Test
-    fun frameCodec_maxPayload_wifi() {
-        val wifiMaxPayload = Protocol.maxPayload(Protocol.WIFI_MAX_FRAME)
-        val payload = ByteArray(wifiMaxPayload) { it.toByte() }
+    fun frameCodec_maximumPayloadSize_wifi() {
+        val wifiMaximumPayloadSize = Protocol.maximumPayloadSize(Protocol.WIFI_MAXIMUM_FRAME_SIZE)
+        val payload = ByteArray(wifiMaximumPayloadSize) { it.toByte() }
         val frame = FrameCodec.encode(payload)
-        assertEquals(wifiMaxPayload + 2, frame.size)
+        assertEquals(wifiMaximumPayloadSize + 2, frame.size)
         val header = frame.copyOfRange(0, 2)
-        assertEquals(wifiMaxPayload, FrameCodec.decodeLength(header))
+        assertEquals(wifiMaximumPayloadSize, FrameCodec.decodeLength(header))
     }
 
     @Test
-    fun frameCodec_maxPayload_ble() {
-        val mtu = 247
-        val maxFrame = Protocol.maxFrameForMtu(mtu) // 244
-        val bleMaxPayload = Protocol.maxPayload(maxFrame) // 242
-        val payload = ByteArray(bleMaxPayload) { it.toByte() }
-        val frame = FrameCodec.encode(payload, bleMaxPayload)
-        assertEquals(bleMaxPayload + 2, frame.size)
+    fun frameCodec_maximumPayloadSize_ble() {
+        val maximumTransmissionUnit = 247
+        val maximumFrameSize = Protocol.maximumFrameSizeForMaximumTransmissionUnit(maximumTransmissionUnit)
+        val bluetoothMaximumPayloadSize = Protocol.maximumPayloadSize(maximumFrameSize)
+        val payload = ByteArray(bluetoothMaximumPayloadSize) { it.toByte() }
+        val frame = FrameCodec.encode(payload, bluetoothMaximumPayloadSize)
+        assertEquals(bluetoothMaximumPayloadSize + 2, frame.size)
     }
 
     @Test
     fun frameCodec_truncatesForBle() {
-        val mtu = 185
-        val maxFrame = Protocol.maxFrameForMtu(mtu) // 182
-        val bleMaxPayload = Protocol.maxPayload(maxFrame) // 180
+        val maximumTransmissionUnit = 185
+        val maximumFrameSize = Protocol.maximumFrameSizeForMaximumTransmissionUnit(maximumTransmissionUnit)
+        val bluetoothMaximumPayloadSize = Protocol.maximumPayloadSize(maximumFrameSize)
         val oversized = ByteArray(300) { it.toByte() }
-        val frame = FrameCodec.encode(oversized, bleMaxPayload)
-        assertEquals(bleMaxPayload + 2, frame.size)
+        val frame = FrameCodec.encode(oversized, bluetoothMaximumPayloadSize)
+        assertEquals(bluetoothMaximumPayloadSize + 2, frame.size)
     }
 
     @Test
@@ -401,7 +401,7 @@ class ProtocolTest {
     @Test
     fun wireSize_ping() {
         val frame = FrameCodec.encode(Protocol.createPing())
-        assertEquals(3, frame.size) // 2-byte header + 1-byte payload
+        assertEquals(3, frame.size)
     }
 
     @Test
@@ -431,86 +431,86 @@ class ProtocolTest {
     @Test
     fun wireSize_pairRequest() {
         val frame = FrameCodec.encode(Protocol.createPairRequest("123456"))
-        assertEquals(9, frame.size) // 2-byte header + 7-byte payload
+        assertEquals(9, frame.size)
     }
 
     @Test
     fun wireSize_pairResponse() {
         val frame = FrameCodec.encode(Protocol.createPairResponse(true))
-        assertEquals(5, frame.size) // 2-byte header + 3-byte payload
+        assertEquals(5, frame.size)
     }
 
     @Test
-    fun wireSize_ack() {
-        val frame = FrameCodec.encode(Protocol.createAck(1))
-        assertEquals(5, frame.size) // 2-byte header + 3-byte payload
+    fun wireSize_acknowledgment() {
+        val frame = FrameCodec.encode(Protocol.createAcknowledgment(1))
+        assertEquals(5, frame.size)
     }
 
     @Test
     fun wireSize_commandEmpty() {
         val frame = FrameCodec.encode(Protocol.createCommand(0x01, 0))
-        assertEquals(6, frame.size) // 2-byte header + 4-byte payload (signal + cmd + seq*2)
+        assertEquals(6, frame.size)
     }
 
     @Test
-    fun wireSize_commandMaxTlv_wifi() {
-        val wifiMaxTlv = Protocol.maxTlvData(Protocol.WIFI_MAX_FRAME)
-        val tlv = ByteArray(wifiMaxTlv)
-        val frame = FrameCodec.encode(Protocol.createCommand(0x01, 0, tlv, wifiMaxTlv))
-        // signal(1) + cmd(1) + seq(2) + tlvData + frameHeader(2)
-        assertEquals(2 + 1 + Protocol.COMMAND_HEADER + wifiMaxTlv, frame.size)
+    fun wireSize_commandMaxTagLengthValue_wifi() {
+        val wifiMaximumTagLengthValueDataSize = Protocol.maximumTagLengthValueDataSize(Protocol.WIFI_MAXIMUM_FRAME_SIZE)
+        val tagLengthValueData = ByteArray(wifiMaximumTagLengthValueDataSize)
+        val frame =
+            FrameCodec.encode(
+                Protocol.createCommand(0x01, 0, tagLengthValueData, wifiMaximumTagLengthValueDataSize),
+            )
+        assertEquals(2 + 1 + Protocol.COMMAND_HEADER_SIZE + wifiMaximumTagLengthValueDataSize, frame.size)
     }
 
     @Test
-    fun wireSize_dynamicMtu() {
-        // Test frame size at MTU 247 (Nokia 6)
-        val maxFrame = Protocol.maxFrameForMtu(247) // 244
-        val maxCmd = Protocol.maxCmdData(maxFrame) // 238 (total TLV data area)
-        val tlv = ByteArray(maxCmd)
-        val payload = Protocol.createCommand(0x01, 0, tlv, maxCmd)
-        val frame = FrameCodec.encode(payload, Protocol.maxPayload(maxFrame))
-        assertEquals(maxFrame, frame.size)
+    fun wireSize_dynamicMaximumTransmissionUnit() {
+        val maximumFrameSize = Protocol.maximumFrameSizeForMaximumTransmissionUnit(247)
+        val maximumCommandDataSize = Protocol.maximumCommandDataSize(maximumFrameSize)
+        val tagLengthValueData = ByteArray(maximumCommandDataSize)
+        val payload = Protocol.createCommand(0x01, 0, tagLengthValueData, maximumCommandDataSize)
+        val frame = FrameCodec.encode(payload, Protocol.maximumPayloadSize(maximumFrameSize))
+        assertEquals(maximumFrameSize, frame.size)
     }
 
     // --- Big-Endian Byte-Level Verification ---
 
     @Test
-    fun bigEndian_ackSeq_0x0100() {
-        val payload = Protocol.createAck(0x0100)
-        assertEquals(Signal.ACK, payload[0])
-        assertEquals(0x01.toByte(), payload[1]) // high byte
-        assertEquals(0x00.toByte(), payload[2]) // low byte
+    fun bigEndian_acknowledgmentSequenceNumber_0x0100() {
+        val payload = Protocol.createAcknowledgment(0x0100)
+        assertEquals(Signal.ACKNOWLEDGMENT, payload[0])
+        assertEquals(0x01.toByte(), payload[1])
+        assertEquals(0x00.toByte(), payload[2])
     }
 
     @Test
-    fun bigEndian_ackSeq_0xFF00() {
-        val payload = Protocol.createAck(0xFF00)
+    fun bigEndian_acknowledgmentSequenceNumber_0xFF00() {
+        val payload = Protocol.createAcknowledgment(0xFF00)
         assertEquals(0xFF.toByte(), payload[1])
         assertEquals(0x00.toByte(), payload[2])
     }
 
     @Test
-    fun bigEndian_ackSeq_0x00FF() {
-        val payload = Protocol.createAck(0x00FF)
+    fun bigEndian_acknowledgmentSequenceNumber_0x00FF() {
+        val payload = Protocol.createAcknowledgment(0x00FF)
         assertEquals(0x00.toByte(), payload[1])
         assertEquals(0xFF.toByte(), payload[2])
     }
 
     @Test
-    fun bigEndian_commandSeq() {
+    fun bigEndian_commandSequenceNumber() {
         val payload = Protocol.createCommand(0x30, 0x0102)
         assertEquals(Signal.COMMAND, payload[0])
-        assertEquals(0x01.toByte(), payload[1]) // seq high
-        assertEquals(0x02.toByte(), payload[2]) // seq low
-        assertEquals(0x30.toByte(), payload[3]) // cmd
+        assertEquals(0x01.toByte(), payload[1]) // sequenceNumber high
+        assertEquals(0x02.toByte(), payload[2]) // sequenceNumber low
+        assertEquals(0x30.toByte(), payload[3]) // commandIdentifier
     }
 
     @Test
-    fun bigEndian_tlvInt() {
-        val encoded = Protocol.tlvEncodeInt(0x01, 0x01020304)
-        // tag=0x01, len=4, value=01 02 03 04
+    fun bigEndian_tagLengthValueInteger() {
+        val encoded = Protocol.encodeTagLengthValueInteger(0x01, 0x01020304)
         assertEquals(0x01.toByte(), encoded[0]) // tag
-        assertEquals(0x04.toByte(), encoded[1]) // len
+        assertEquals(0x04.toByte(), encoded[1]) // length
         assertEquals(0x01.toByte(), encoded[2]) // int byte 0 (MSB)
         assertEquals(0x02.toByte(), encoded[3]) // int byte 1
         assertEquals(0x03.toByte(), encoded[4]) // int byte 2
@@ -525,57 +525,57 @@ class ProtocolTest {
         assertEquals(200.toByte(), frame[1]) // low byte = 0xC8
     }
 
-    // --- TLV 255-Byte Limit ---
+    // --- Tag-Length-Value 255-Byte Limit ---
 
     @Test
-    fun tlv_maxValueSize() {
+    fun tagLengthValue_maxValueSize() {
         val value = ByteArray(255) { it.toByte() }
-        val encoded = Protocol.tlvEncode(0x01, value)
-        assertEquals(257, encoded.size) // tag(1) + len(1) + value(255)
-        val fields = Protocol.tlvDecode(encoded)
+        val encoded = Protocol.encodeTagLengthValue(0x01, value)
+        assertEquals(257, encoded.size)
+        val fields = Protocol.decodeTagLengthValue(encoded)
         assertEquals(1, fields.size)
         assertEquals(255, fields[0].value.size)
     }
 
     @Test
-    fun tlv_oversizedValueTruncated() {
+    fun tagLengthValue_oversizedValueTruncated() {
         val value = ByteArray(300) { it.toByte() }
-        val encoded = Protocol.tlvEncode(0x01, value)
-        assertEquals(257, encoded.size) // tag(1) + len(1) + capped at 255
-        val fields = Protocol.tlvDecode(encoded)
+        val encoded = Protocol.encodeTagLengthValue(0x01, value)
+        assertEquals(257, encoded.size)
+        val fields = Protocol.decodeTagLengthValue(encoded)
         assertEquals(255, fields[0].value.size)
     }
 
     @Test
-    fun tlv_zeroLengthValue() {
-        val encoded = Protocol.tlvEncode(0x01, ByteArray(0))
-        assertEquals(2, encoded.size) // tag(1) + len(1)
-        val fields = Protocol.tlvDecode(encoded)
+    fun tagLengthValue_zeroLengthValue() {
+        val encoded = Protocol.encodeTagLengthValue(0x01, ByteArray(0))
+        assertEquals(2, encoded.size)
+        val fields = Protocol.decodeTagLengthValue(encoded)
         assertEquals(1, fields.size)
         assertEquals(0, fields[0].value.size)
     }
 
     @Test
-    fun tlv_singleByteValue() {
-        val encoded = Protocol.tlvEncode(0x05, byteArrayOf(0xAB.toByte()))
+    fun tagLengthValue_singleByteValue() {
+        val encoded = Protocol.encodeTagLengthValue(0x05, byteArrayOf(0xAB.toByte()))
         assertEquals(3, encoded.size)
-        val fields = Protocol.tlvDecode(encoded)
+        val fields = Protocol.decodeTagLengthValue(encoded)
         assertEquals(0xAB.toByte(), fields[0].value[0])
     }
 
     @Test
-    fun tlv_stringMaxLength() {
-        val longStr = "a".repeat(255)
-        val encoded = Protocol.tlvEncodeString(0x01, longStr)
-        val fields = Protocol.tlvDecode(encoded)
-        assertEquals(longStr, Protocol.tlvGetString(fields, 0x01))
+    fun tagLengthValue_stringMaxLength() {
+        val longString = "a".repeat(255)
+        val encoded = Protocol.encodeTagLengthValueString(0x01, longString)
+        val fields = Protocol.decodeTagLengthValue(encoded)
+        assertEquals(longString, Protocol.getTagLengthValueString(fields, 0x01))
     }
 
     @Test
-    fun tlv_stringOversizedTruncated() {
-        val longStr = "a".repeat(300)
-        val encoded = Protocol.tlvEncodeString(0x01, longStr)
-        val fields = Protocol.tlvDecode(encoded)
+    fun tagLengthValue_stringOversizedTruncated() {
+        val longString = "a".repeat(300)
+        val encoded = Protocol.encodeTagLengthValueString(0x01, longString)
+        val fields = Protocol.decodeTagLengthValue(encoded)
         assertEquals(255, fields[0].value.size)
     }
 
@@ -597,74 +597,67 @@ class ProtocolTest {
     }
 
     @Test
-    fun parseAckSeq_emptyPayload() {
-        assertNull(Protocol.parseAckSeq(ByteArray(0)))
+    fun parseAcknowledgmentSequenceNumber_emptyPayload() {
+        assertNull(Protocol.parseAcknowledgmentSequenceNumber(ByteArray(0)))
     }
 
     @Test
-    fun parseAckSeq_wrongSignal() {
-        assertNull(Protocol.parseAckSeq(byteArrayOf(Signal.PING, 0x00, 0x01)))
+    fun parseAcknowledgmentSequenceNumber_wrongSignal() {
+        assertNull(Protocol.parseAcknowledgmentSequenceNumber(byteArrayOf(Signal.PING, 0x00, 0x01)))
     }
 
     @Test
     fun parseCommand_exactlyMinimumSize() {
-        // 4 bytes = signal + seq(2) + cmd, no TLV data
         val payload = byteArrayOf(Signal.COMMAND, 0x00, 0x00, 0x10)
-        val cmd = Protocol.parseCommand(payload)
-        assertNotNull(cmd)
-        assertEquals(0x10.toByte(), cmd!!.cmd)
-        assertEquals(0, cmd.seq)
-        assertEquals(0, cmd.data.size)
+        val command = Protocol.parseCommand(payload)
+        assertNotNull(command)
+        assertEquals(0x10.toByte(), command!!.commandIdentifier)
+        assertEquals(0, command.sequenceNumber)
+        assertEquals(0, command.data.size)
     }
 
     @Test
-    fun tlvDecode_truncatedField() {
-        // tag=0x01, len=5, but only 2 bytes of value follow
+    fun decodeTagLengthValue_truncatedField() {
         val truncated = byteArrayOf(0x01, 0x05, 0xAA.toByte(), 0xBB.toByte())
-        val fields = Protocol.tlvDecode(truncated)
-        assertEquals(0, fields.size) // should skip truncated field
-    }
-
-    @Test
-    fun tlvDecode_singleByte() {
-        // Only 1 byte — not enough for tag+len
-        val fields = Protocol.tlvDecode(byteArrayOf(0x01))
+        val fields = Protocol.decodeTagLengthValue(truncated)
         assertEquals(0, fields.size)
     }
 
     @Test
-    fun tlvDecode_multipleWithLastTruncated() {
-        // First field valid: tag=0x01, len=1, value=0xAA
-        // Second field truncated: tag=0x02, len=3, but only 1 byte
+    fun decodeTagLengthValue_singleByte() {
+        val fields = Protocol.decodeTagLengthValue(byteArrayOf(0x01))
+        assertEquals(0, fields.size)
+    }
+
+    @Test
+    fun decodeTagLengthValue_multipleWithLastTruncated() {
         val data = byteArrayOf(0x01, 0x01, 0xAA.toByte(), 0x02, 0x03, 0xBB.toByte())
-        val fields = Protocol.tlvDecode(data)
-        assertEquals(1, fields.size) // only first field should parse
+        val fields = Protocol.decodeTagLengthValue(data)
+        assertEquals(1, fields.size)
         assertEquals(0x01.toByte(), fields[0].tag)
     }
 
     @Test
-    fun tlvGetInt_tooShortValue() {
-        // Encode a 2-byte value but try to read as int (needs 4 bytes)
-        val encoded = Protocol.tlvEncode(0x01, byteArrayOf(0x01, 0x02))
-        val fields = Protocol.tlvDecode(encoded)
-        assertNull(Protocol.tlvGetInt(fields, 0x01))
+    fun getTagLengthValueInteger_tooShortValue() {
+        val encoded = Protocol.encodeTagLengthValue(0x01, byteArrayOf(0x01, 0x02))
+        val fields = Protocol.decodeTagLengthValue(encoded)
+        assertNull(Protocol.getTagLengthValueInteger(fields, 0x01))
     }
 
     @Test
-    fun tlvGetByte_emptyValue() {
-        val encoded = Protocol.tlvEncode(0x01, ByteArray(0))
-        val fields = Protocol.tlvDecode(encoded)
-        assertNull(Protocol.tlvGetByte(fields, 0x01))
+    fun getTagLengthValueByte_emptyValue() {
+        val encoded = Protocol.encodeTagLengthValue(0x01, ByteArray(0))
+        val fields = Protocol.decodeTagLengthValue(encoded)
+        assertNull(Protocol.getTagLengthValueByte(fields, 0x01))
     }
 
     @Test
-    fun parseQr_emptyPayload() {
-        assertNull(Protocol.parseQr(ByteArray(0)))
+    fun parseQRCodePayload_emptyPayload() {
+        assertNull(Protocol.parseQRCodePayload(ByteArray(0)))
     }
 
     @Test
     fun pairRequest_exactCode() {
-        // Code exactly 6 chars
         val payload = Protocol.createPairRequest("000000")
         val code = Protocol.parsePairRequestCode(payload)
         assertEquals("000000", code)
@@ -679,13 +672,10 @@ class ProtocolTest {
 
     @Test
     fun pairResponse_allReasons() {
-        // reason 0x00 = success
         val r0 = Protocol.parsePairResponse(Protocol.createPairResponse(false, 0x00))
         assertEquals(0x00.toByte(), r0!!.second)
-        // reason 0x01 = code mismatch
         val r1 = Protocol.parsePairResponse(Protocol.createPairResponse(false, 0x01))
         assertEquals(0x01.toByte(), r1!!.second)
-        // reason 0x02 = user rejected
         val r2 = Protocol.parsePairResponse(Protocol.createPairResponse(false, 0x02))
         assertEquals(0x02.toByte(), r2!!.second)
     }
@@ -703,22 +693,21 @@ class ProtocolTest {
 
     @Test
     fun frameCodec_oversizedPayloadTruncated() {
-        val wifiMaxPayload = Protocol.maxPayload(Protocol.WIFI_MAX_FRAME)
-        val payload = ByteArray(wifiMaxPayload + 100) { it.toByte() }
+        val wifiMaximumPayloadSize = Protocol.maximumPayloadSize(Protocol.WIFI_MAXIMUM_FRAME_SIZE)
+        val payload = ByteArray(wifiMaximumPayloadSize + 100) { it.toByte() }
         val frame = FrameCodec.encode(payload)
-        assertEquals(wifiMaxPayload + 2, frame.size) // capped at wifi max payload + header
+        assertEquals(wifiMaximumPayloadSize + 2, frame.size)
     }
 
     @Test
     fun frameCodec_extractFrames_partialFrame() {
-        // Complete frame (ping) + partial frame header
         val ping = FrameCodec.encode(Protocol.createPing())
-        val partial = ping + byteArrayOf(0x00, 0x05) // header says 5 bytes but no payload
+        val partial = ping + byteArrayOf(0x00, 0x05)
         val frames = mutableListOf<ByteArray>()
         val remaining = FrameCodec.extractFrames(partial) { frames.add(it) }
         assertEquals(1, frames.size)
         assertEquals(Signal.PING, frames[0][0])
-        assertEquals(2, remaining.size) // the partial header remains
+        assertEquals(2, remaining.size)
     }
 
     @Test
@@ -731,7 +720,6 @@ class ProtocolTest {
 
     @Test
     fun frameCodec_extractFrames_headerOnly() {
-        // Just 2 bytes (header) with no payload
         val frames = mutableListOf<ByteArray>()
         val remaining = FrameCodec.extractFrames(byteArrayOf(0x00, 0x03)) { frames.add(it) }
         assertEquals(0, frames.size)
@@ -740,11 +728,10 @@ class ProtocolTest {
 
     @Test
     fun frameCodec_extractFrames_invalidLength() {
-        // length=0 is invalid per implementation
         val frames = mutableListOf<ByteArray>()
         val remaining = FrameCodec.extractFrames(byteArrayOf(0x00, 0x00, 0x04)) { frames.add(it) }
         assertEquals(0, frames.size)
-        assertEquals(0, remaining.size) // buffer reset on invalid
+        assertEquals(0, remaining.size)
     }
 
     @Test
@@ -764,75 +751,76 @@ class ProtocolTest {
 
     @Test
     fun frameCodec_roundTrip_command() {
-        val tlv = Protocol.tlvEncodeString(0x01, "test") + Protocol.tlvEncodeInt(0x02, 42)
-        val payload = Protocol.createCommand(0x10, 100, tlv)
+        val tagLengthValueData =
+            Protocol.encodeTagLengthValueString(0x01, "test") + Protocol.encodeTagLengthValueInteger(0x02, 42)
+        val payload = Protocol.createCommand(0x10, 100, tagLengthValueData)
         val frame = FrameCodec.encode(payload)
         val header = frame.copyOfRange(0, 2)
-        val len = FrameCodec.decodeLength(header)
-        val extracted = frame.copyOfRange(2, 2 + len)
-        val cmd = Protocol.parseCommand(extracted)
-        assertNotNull(cmd)
-        assertEquals(0x10.toByte(), cmd!!.cmd)
-        assertEquals(100, cmd.seq)
-        assertEquals("test", Protocol.tlvGetString(Protocol.tlvDecode(cmd.data), 0x01))
-        assertEquals(42, Protocol.tlvGetInt(Protocol.tlvDecode(cmd.data), 0x02))
+        val length = FrameCodec.decodeLength(header)
+        val extracted = frame.copyOfRange(2, 2 + length)
+        val command = Protocol.parseCommand(extracted)
+        assertNotNull(command)
+        assertEquals(0x10.toByte(), command!!.commandIdentifier)
+        assertEquals(100, command.sequenceNumber)
+        assertEquals("test", Protocol.getTagLengthValueString(Protocol.decodeTagLengthValue(command.data), 0x01))
+        assertEquals(42, Protocol.getTagLengthValueInteger(Protocol.decodeTagLengthValue(command.data), 0x02))
     }
 
     // --- Dynamic Sizing ---
 
     @Test
     fun dynamicSizing_helpers() {
-        // WiFi: maxFrame=4096
-        assertEquals(4094, Protocol.maxPayload(4096))
-        assertEquals(4090, Protocol.maxCmdData(4096))
-        assertEquals(255, Protocol.maxTlvData(4096)) // capped by TLV_MAX_VALUE
+        // WiFi: maximumFrameSize=4096
+        assertEquals(4094, Protocol.maximumPayloadSize(4096))
+        assertEquals(4090, Protocol.maximumCommandDataSize(4096))
+        assertEquals(255, Protocol.maximumTagLengthValueDataSize(4096))
 
-        // BLE MTU 247 (Nokia 6): maxFrame=244
-        assertEquals(244, Protocol.maxFrameForMtu(247))
-        assertEquals(242, Protocol.maxPayload(244))
-        assertEquals(238, Protocol.maxCmdData(244))
-        assertEquals(236, Protocol.maxTlvData(244)) // 238 - 2 (tag+len)
+        // BLE MTU 247 (Nokia 6): maximumFrameSize=244
+        assertEquals(244, Protocol.maximumFrameSizeForMaximumTransmissionUnit(247))
+        assertEquals(242, Protocol.maximumPayloadSize(244))
+        assertEquals(238, Protocol.maximumCommandDataSize(244))
+        assertEquals(236, Protocol.maximumTagLengthValueDataSize(244))
 
-        // BLE MTU 185 (iPhone): maxFrame=182
-        assertEquals(182, Protocol.maxFrameForMtu(185))
-        assertEquals(180, Protocol.maxPayload(182))
-        assertEquals(176, Protocol.maxCmdData(182))
-        assertEquals(174, Protocol.maxTlvData(182)) // 176 - 2 (tag+len)
+        // BLE MTU 185 (iPhone): maximumFrameSize=182
+        assertEquals(182, Protocol.maximumFrameSizeForMaximumTransmissionUnit(185))
+        assertEquals(180, Protocol.maximumPayloadSize(182))
+        assertEquals(176, Protocol.maximumCommandDataSize(182))
+        assertEquals(174, Protocol.maximumTagLengthValueDataSize(182))
 
-        // BLE MTU 23 (minimum): maxFrame=20
-        assertEquals(20, Protocol.maxFrameForMtu(23))
-        assertEquals(18, Protocol.maxPayload(20))
-        assertEquals(14, Protocol.maxCmdData(20))
-        assertEquals(12, Protocol.maxTlvData(20)) // 14 - 2 (tag+len)
+        // BLE MTU 23 (minimum): maximumFrameSize=20
+        assertEquals(20, Protocol.maximumFrameSizeForMaximumTransmissionUnit(23))
+        assertEquals(18, Protocol.maximumPayloadSize(20))
+        assertEquals(14, Protocol.maximumCommandDataSize(20))
+        assertEquals(12, Protocol.maximumTagLengthValueDataSize(20))
     }
 
     @Test
-    fun dynamicSizing_signalsFitMinMtu() {
-        val minMaxPayload = Protocol.maxPayload(Protocol.maxFrameForMtu(23)) // 18
-        // All session signals must fit in minimum MTU
-        assertTrue(Protocol.createPing().size <= minMaxPayload)
-        assertTrue(Protocol.createPong().size <= minMaxPayload)
-        assertTrue(Protocol.createReady().size <= minMaxPayload)
-        assertTrue(Protocol.createGoodbye().size <= minMaxPayload)
-        assertTrue(Protocol.createUnpair().size <= minMaxPayload)
-        assertTrue(Protocol.createPairRequest("123456").size <= minMaxPayload)
-        assertTrue(Protocol.createPairResponse(true).size <= minMaxPayload)
-        assertTrue(Protocol.createAck(65535).size <= minMaxPayload)
+    fun dynamicSizing_signalsFitMinimumTransmissionUnit() {
+        val minimumMaximumPayloadSize =
+            Protocol.maximumPayloadSize(Protocol.maximumFrameSizeForMaximumTransmissionUnit(23))
+        assertTrue(Protocol.createPing().size <= minimumMaximumPayloadSize)
+        assertTrue(Protocol.createPong().size <= minimumMaximumPayloadSize)
+        assertTrue(Protocol.createReady().size <= minimumMaximumPayloadSize)
+        assertTrue(Protocol.createGoodbye().size <= minimumMaximumPayloadSize)
+        assertTrue(Protocol.createUnpair().size <= minimumMaximumPayloadSize)
+        assertTrue(Protocol.createPairRequest("123456").size <= minimumMaximumPayloadSize)
+        assertTrue(Protocol.createPairResponse(true).size <= minimumMaximumPayloadSize)
+        assertTrue(Protocol.createAcknowledgment(65535).size <= minimumMaximumPayloadSize)
     }
 
     // --- Helpers ---
 
-    private fun buildQr(
+    private fun buildQRCodePayload(
         seed: ByteArray,
         host: String,
-        prefer: String,
+        preferredTransport: String,
     ): ByteArray {
-        val buf = ByteBuffer.allocate(24).order(ByteOrder.BIG_ENDIAN)
-        buf.putShort(0xBC1B.toShort())
-        buf.put(seed)
-        host.split(".").forEach { buf.put(it.toInt().toByte()) }
-        buf.put(if (prefer == "ble") 0x01 else 0x00)
-        buf.put(0x00) // reserved
-        return buf.array()
+        val buffer = ByteBuffer.allocate(24).order(ByteOrder.BIG_ENDIAN)
+        buffer.putShort(0xBC1B.toShort())
+        buffer.put(seed)
+        host.split(".").forEach { buffer.put(it.toInt().toByte()) }
+        buffer.put(if (preferredTransport == "ble") 0x01 else 0x00)
+        buffer.put(0x00) // reserved
+        return buffer.array()
     }
 }

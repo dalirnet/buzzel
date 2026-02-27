@@ -7,7 +7,8 @@ import android.widget.LinearLayout
 fun dp(
     context: Context,
     value: Int,
-): Int = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), context.resources.displayMetrics).toInt()
+): Int =
+    TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), context.resources.displayMetrics).toInt()
 
 fun matchWrap() =
     LinearLayout.LayoutParams(
